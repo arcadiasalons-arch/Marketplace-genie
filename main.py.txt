@@ -1,0 +1,26 @@
+
+import streamlit as st
+import google.generativeai as genai
+from PIL import Image
+
+# 1. Setup
+st.title("🧞 Marketplace Genie")
+if "GOOGLE_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    st.error("Missing Key! Go to Settings > Secrets and add GOOGLE_API_KEY")
+
+# 2. Input
+name = st.text_input("What are you selling?")
+img_file = st.file_uploader("Upload a photo", type=['jpg', 'png', 'jpeg'])
+
+# 3. Magic
+if st.button("Generate Listing"):
+    if name and img_file:
+        with st.spinner("Genie is thinking..."):
+            img = Image.open(img_file)
+            response = model.generate_content(["Create a professional marketplace listing for this:", name, img])
+            st.write(response.text)
+    else:
+        st.warning("Please provide a name and a photo!")
