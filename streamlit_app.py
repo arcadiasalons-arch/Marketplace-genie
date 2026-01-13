@@ -9,7 +9,8 @@ st.title("🧞 Marketplace Genie")
 if "GOOGLE_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        model = genai.GenerativeModel('gemini-1.5-flash-exp')
+        model = genai.GenerativeModel('gemini-3-flash')
+
 
 
     except Exception as e:
