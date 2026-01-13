@@ -65,9 +65,10 @@ if st.button("Generate Pro Appraisal ✨"):
                 """
 
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash", 
-                    contents=[prompt, img]
-                )
+    model="gemini-2.5-flash-lite", 
+    contents=[prompt, img]
+)
+
                 
                 st.success("Appraisal Ready!")
                 st.markdown("---")
