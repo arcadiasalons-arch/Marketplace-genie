@@ -2,15 +2,14 @@ import streamlit as st
 from google import genai
 from PIL import Image
 
-# 1. App Configuration
-st.set_page_config(page_title="Marketplace Genie", page_icon="🧞")
+# 1. Page Config
+st.set_page_config(page_title="Marketplace Genie", page_icon="🧞", layout="centered")
 st.title("🧞 Marketplace Genie")
-st.subheader("2026 Professional Appraisal & Listing")
+st.markdown("### *2026 Professional Used-Market Appraisal*")
 
-# 2. Connect to the AI (Using 2026 Client)
+# 2. AI Client Setup
 if "GOOGLE_API_KEY" in st.secrets:
     try:
-        # Standard 2026 setup
         client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
     except Exception as e:
         st.error(f"Setup Error: {e}")
@@ -22,31 +21,33 @@ name = st.text_input("What are you selling?", placeholder="e.g. iPhone 12 Pro Ma
 img_file = st.file_uploader("Upload a photo", type=['jpg', 'png', 'jpeg'])
 
 # 4. The Appraisal Magic
-if st.button("Generate Appraisal ✨"):
+if st.button("Analyze & Value My Item ✨"):
     if name and img_file:
-        with st.spinner("Genie is analyzing 2026 market trends..."):
+        with st.spinner("Genie is researching 2026 used market trends..."):
             try:
                 img = Image.open(img_file)
                 
-                # Your Custom 2026 Appraisal Prompt
-                prompt = f"""Act as a professional marketplace appraiser for: {name}. 
-                Use current 2026 market trends for your estimates.
-                Analyze the provided image and provide a report with:
-                1. **Market Valuation**: A 'Quick Sale' price and a 'Fair Market' price for today's market.
-                2. **Likelihood of Sale**: A score from 1-10 on how high demand is right now.
-                3. **Estimated Time to Sell**: How many days/weeks to find a buyer at these prices.
-                4. **Professional Listing**: A catchy title and SEO-optimized description.
-                5. **Condition Report**: Any visible wear or selling points you see in the photo."""
+                # REVISED PROMPT: Ruthless Realistic Pricing
+                prompt = f"""Act as a realistic, ruthless marketplace appraiser for a USED {name}. 
+                IMPORTANT: Do NOT suggest original retail prices or 'New' prices. 
+                Focus ONLY on current 2026 resale values for pre-owned items in the condition seen in the photo.
+                
+                Analyze the image and provide:
+                1. **Realistic Used Valuation**: Give a 'Quick Sale' price (sells today) and a 'Fair Market' price (sells in 1 week). 
+                2. **Depreciation Check**: Briefly explain why it is priced this way (e.g. 'This is a 5-year-old model with visible screen wear').
+                3. **Likelihood of Sale**: A score from 1-10 on how high demand is for this specific model in 2026.
+                4. **Estimated Time to Sell**: How many days it will stay on the market at your suggested price.
+                5. **Pro Listing Description**: Write a catchy title and a short, honest description mentioning its used status."""
 
-                # Calling the stable 2.5 Flash model
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash", 
+                    model="gemini-2.0-flash", 
                     contents=[prompt, img]
                 )
                 
-                st.success("Appraisal Complete!")
+                st.success("Appraisal Generated!")
                 st.markdown("---")
-                st.write(response.text)
+                # This makes the output look like a clean report
+                st.info(response.text)
                 
             except Exception as e:
                 st.error(f"The Genie hit a snag: {e}")
