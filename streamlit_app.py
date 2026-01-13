@@ -1,55 +1,79 @@
 import streamlit as st
 from google import genai
 from PIL import Image
+import datetime
 
-# 1. Page Config
-st.set_page_config(page_title="Marketplace Genie", page_icon="🧞", layout="centered")
-st.title("🧞 Marketplace Genie")
-st.markdown("### *2026 Professional Used-Market Appraisal*")
+st.set_page_config(page_title="Marketplace Genie Pro", page_icon="🧞")
+st.title("🧞 Marketplace Genie Pro")
 
-# 2. AI Client Setup
+# 1. Setup AI
 if "GOOGLE_API_KEY" in st.secrets:
-    try:
-        client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-    except Exception as e:
-        st.error(f"Setup Error: {e}")
+    client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
 else:
-    st.error("Missing Key! Go to Settings > Secrets and add GOOGLE_API_KEY")
+    st.error("Missing API Key in Secrets!")
 
-# 3. User Inputs
-name = st.text_input("What are you selling?", placeholder="e.g. iPhone 12 Pro Max")
-img_file = st.file_uploader("Upload a photo", type=['jpg', 'png', 'jpeg'])
+# 2. Dynamic Input System
+category = st.selectbox("What are you selling?", ["Select Category", "Electronics/Phones", "Furniture", "Vehicles", "Other"])
 
-# 4. The Appraisal Magic
-if st.button("Analyze & Value My Item ✨"):
-    if name and img_file:
-        with st.spinner("Genie is researching 2026 used market trends..."):
+# This dictionary stores the specific details we gather
+details = {}
+
+if category == "Electronics/Phones":
+    col1, col2 = st.columns(2)
+    with col1:
+        details['model'] = st.text_input("Exact Model", placeholder="e.g. iPhone 17 Pro Max")
+        details['storage'] = st.selectbox("Storage", ["128GB", "256GB", "512GB", "1TB"])
+    with col2:
+        details['carrier'] = st.selectbox("Network", ["Unlocked", "AT&T", "Verizon", "T-Mobile"])
+        details['condition'] = st.select_slider("Condition", options=["Broken", "Poor", "Fair", "Good", "Mint"])
+
+elif category == "Furniture":
+    details['type'] = st.text_input("Item Type", placeholder="e.g. Sectional Sofa")
+    details['brand'] = st.text_input("Brand/Designer", placeholder="e.g. West Elm")
+    details['condition'] = st.select_slider("Condition", options=["Damaged", "Used", "Like New"])
+
+# 3. Photo Upload
+img_file = st.file_uploader("Upload a clear photo of the item", type=['jpg', 'png', 'jpeg'])
+
+# 4. Smart Appraisal Logic
+if st.button("Generate Pro Appraisal ✨"):
+    if img_file and category != "Select Category":
+        with st.spinner("Genie is cross-referencing 2026 market data..."):
             try:
                 img = Image.open(img_file)
                 
-                # REVISED PROMPT: Ruthless Realistic Pricing
-                prompt = f"""Act as a realistic, ruthless marketplace appraiser for a USED {name}. 
-                IMPORTANT: Do NOT suggest original retail prices or 'New' prices. 
-                Focus ONLY on current 2026 resale values for pre-owned items in the condition seen in the photo.
+                # We build a "Bulletproof" prompt using the data we gathered
+                current_date = datetime.date.today().strftime("%B %d, %2026")
                 
-                Analyze the image and provide:
-                1. **Realistic Used Valuation**: Give a 'Quick Sale' price (sells today) and a 'Fair Market' price (sells in 1 week). 
-                2. **Depreciation Check**: Briefly explain why it is priced this way (e.g. 'This is a 5-year-old model with visible screen wear').
-                3. **Likelihood of Sale**: A score from 1-10 on how high demand is for this specific model in 2026.
-                4. **Estimated Time to Sell**: How many days it will stay on the market at your suggested price.
-                5. **Pro Listing Description**: Write a catchy title and a short, honest description mentioning its used status."""
+                info_string = ", ".join([f"{k}: {v}" for k, v in details.items()])
+                
+                prompt = f"""
+                TODAY'S DATE: {current_date}
+                ACT AS: A Senior Marketplace Data Analyst.
+                ITEM DATA: {info_string}
+                
+                TASK: Provide a ruthless, realistic used-market appraisal. 
+                - DO NOT guess or use data from 5 years ago. 
+                - THIS IS THE LATEST {category}.
+                - Consider the condition '{details.get('condition', 'Used')}' visible in the photo.
+                
+                REPORT FORMAT:
+                1. **Market Value**: Suggest a 'Quick Sale' and 'Fair Market' price.
+                2. **2026 Context**: Explain why this price is accurate for the current year.
+                3. **Selling Strategy**: Best platform to sell on (eBay, Marketplace, etc.)
+                4. **Pro Listing**: Write a title and description based ONLY on the facts provided.
+                """
 
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash-lite", 
+                    model="gemini-2.0-flash", 
                     contents=[prompt, img]
                 )
                 
-                st.success("Appraisal Generated!")
+                st.success("Appraisal Ready!")
                 st.markdown("---")
-                # This makes the output look like a clean report
                 st.info(response.text)
                 
             except Exception as e:
-                st.error(f"The Genie hit a snag: {e}")
+                st.error(f"Snag: {e}")
     else:
-        st.warning("Please provide both a name and a photo!")
+        st.warning("Please select a category and upload a photo!")
