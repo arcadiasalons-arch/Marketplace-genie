@@ -28,7 +28,8 @@ if st.button("Generate Listing ✨"):
                 img = Image.open(img_file)
                 # Using the stable 2026 Flash model
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash", 
+                    model="gemini-2.5-flash"
+, 
                     contents=[f"Create a professional marketplace listing for: {name}", img]
                 )
                 st.success("Success!")
