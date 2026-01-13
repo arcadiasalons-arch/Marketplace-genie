@@ -6,12 +6,43 @@ import base64
 import io
 from PIL import Image
 
-# 1. Page Configuration
-st.set_page_config(page_title="Marketplace Genie Pro", page_icon="🧞", layout="centered")
-st.title("🧞 Marketplace Genie Pro")
+# 1. Language Dictionary
+LANGUAGES = {
+    "English": {
+        "title": "🧞 Marketplace Genie Pro",
+        "select_cat": "What are you selling?",
+        "model": "Exact Model",
+        "storage": "Storage",
+        "condition": "Condition",
+        "upload": "Upload a clear photo",
+        "button": "Generate Appraisal ✨",
+        "spinner": "Analyzing market data...",
+        "success": "Appraisal Generated via",
+        "prompt_instruction": "USE REALISTIC 2026 USED RESALE PRICES ONLY."
+    },
+    "Español": {
+        "title": "🧞 Genio del Mercado Pro",
+        "select_cat": "¿Qué estás vendiendo?",
+        "model": "Modelo Exacto",
+        "storage": "Almacenamiento",
+        "condition": "Estado",
+        "upload": "Sube una foto clara",
+        "button": "Generar Tasación ✨",
+        "spinner": "Analizando datos del mercado...",
+        "success": "Tasación generada por",
+        "prompt_instruction": "USE SOLO PRECIOS DE REVENTA USADOS REALISTAS DE 2026."
+    }
+}
+
+# 2. Sidebar Language Selector
+with st.sidebar:
+    selected_lang = st.selectbox("🌐 Language / Idioma", list(LANGUAGES.keys()))
+    t = LANGUAGES[selected_lang] # 't' stands for text/translations
+
+st.title(t["title"])
 st.markdown("---")
 
-# 2. Setup All API Clients
+# 3. Setup All API Clients
 def get_clients():
     clients = {}
     if "GOOGLE_API_KEY" in st.secrets:
@@ -22,83 +53,51 @@ def get_clients():
 
 clients = get_clients()
 
-# 3. Smart Category Selection & Inputs
-category = st.selectbox("What are you selling?", ["Select Category", "Phones", "Furniture", "Other"])
+# 4. Inputs using the translated labels
+category = st.selectbox(t["select_cat"], ["Select", "Phones", "Furniture"])
 details = {}
 
 if category == "Phones":
     col1, col2 = st.columns(2)
     with col1:
-        details['model'] = st.text_input("Exact Model", placeholder="e.g. iPhone 17 Pro Max")
-        details['storage'] = st.selectbox("Storage", ["128GB", "256GB", "512GB", "1TB"])
+        details['model'] = st.text_input(t["model"])
+        details['storage'] = st.selectbox(t["storage"], ["128GB", "256GB", "512GB"])
     with col2:
-        details['carrier'] = st.selectbox("Carrier", ["Unlocked", "AT&T", "Verizon", "T-Mobile"])
-        details['condition'] = st.select_slider("Condition", options=["Broken", "Poor", "Fair", "Good", "Mint"])
-elif category == "Furniture":
-    details['type'] = st.text_input("Item Type", placeholder="e.g. Leather Sofa")
-    details['condition'] = st.select_slider("Condition", options=["Damaged", "Used", "Like New"])
+        details['condition'] = st.select_slider(t["condition"], options=["Poor", "Fair", "Good", "Mint"])
 
-img_file = st.file_uploader("Upload a clear photo", type=['jpg', 'png', 'jpeg'])
+img_file = st.file_uploader(t["upload"], type=['jpg', 'png', 'jpeg'])
 
-# 4. The Triple Waterfall Logic
+# 5. Logic
 def run_appraisal(prompt, img):
-    # --- LEVEL 1: GOOGLE GEMINI (2.5 Flash-Lite) ---
     if 'google' in clients:
         try:
             response = clients['google'].models.generate_content(
                 model="gemini-2.5-flash-lite", 
                 contents=[prompt, img]
             )
-            return response.text, "Google Gemini 2.5"
+            return response.text, "Google Gemini"
         except Exception:
-            st.warning("🧞 Google is busy... trying Backup Brain 1.")
-
-    # --- LEVEL 2: GROQ LLAMA 4 SCOUT (Fastest 2026 Vision) ---
+            pass
     if 'groq' in clients:
         try:
             buffered = io.BytesIO()
             img.save(buffered, format="JPEG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
-            
             response = clients['groq'].chat.completions.create(
                 model="meta-llama/llama-4-scout-17b-16e-instruct",
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_str}"}}
-                    ]
-                }]
+                messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_str}"}}]}]
             )
             return response.choices[0].message.content, "Groq Llama 4"
-        except Exception as e:
-            st.error(f"Genie is fully exhausted! Error: {e}")
-    
+        except Exception:
+            return "Error", "None"
     return None, None
 
-# 5. The "Magic" Trigger
-if st.button("Generate Appraisal ✨"):
-    if img_file and category != "Select Category":
-        with st.spinner("Analyzing market data across 2026 marketplaces..."):
+if st.button(t["button"]):
+    if img_file and category != "Select":
+        with st.spinner(t["spinner"]):
             img = Image.open(img_file)
-            today = datetime.date.today().strftime("%B %d, 2026")
-            info_text = ", ".join([f"{k}: {v}" for k, v in details.items()])
-            
-            final_prompt = f"""TODAY'S DATE: {today}. 
-            ACT AS: Professional Marketplace Appraiser.
-            ITEM: {category} ({info_text}).
-            
-            TASK: Use realistic 2026 used-market resale values. Do NOT suggest retail prices.
-            REPORT:
-            1. **Valuation**: 'Quick Sale' and 'Fair Market' prices.
-            2. **Market Likelihood**: Score 1-10 on demand.
-            3. **Time to Sell**: Days/Weeks to find a buyer.
-            4. **Pro Listing**: Catchy title and SEO description."""
-            
+            today = datetime.date.today().strftime("%B %d, %2026")
+            final_prompt = f"DATE: {today}. Appraise {category}. Language: {selected_lang}. {t['prompt_instruction']}"
             result, provider = run_appraisal(final_prompt, img)
-            if result:
-                st.success(f"Appraisal Generated via {provider}")
-                st.markdown("---")
-                st.info(result)
-    else:
-        st.warning("Please select a category and upload a photo first!")
+            st.success(f"{t['success']} {provider}")
+            st.info(result)
