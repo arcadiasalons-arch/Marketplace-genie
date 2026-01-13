@@ -6,43 +6,50 @@ import base64
 import io
 from PIL import Image
 
-# 1. Language Dictionary
-LANGUAGES = {
+# 1. Language Configuration Map
+LANG_MAP = {
     "English": {
-        "title": "🧞 Marketplace Genie Pro",
-        "select_cat": "What are you selling?",
-        "model": "Exact Model",
-        "storage": "Storage",
-        "condition": "Condition",
-        "upload": "Upload a clear photo",
-        "button": "Generate Appraisal ✨",
-        "spinner": "Analyzing market data...",
-        "success": "Appraisal Generated via",
-        "prompt_instruction": "USE REALISTIC 2026 USED RESALE PRICES ONLY."
+        "title": "🧞 My Genie, Price to Sell!",
+        "sidebar_header": "Genie Settings",
+        "lang_label": "Choose Language",
+        "cat_label": "What are you selling?",
+        "model_label": "Exact Model Name",
+        "storage_label": "Storage Capacity",
+        "cond_label": "Condition",
+        "upload_label": "Upload Item Photo",
+        "btn_text": "Get My Price! 💰",
+        "loading": "Genie is analyzing the 2026 market...",
+        "success_msg": "Appraisal Ready via",
+        "error_msg": "Both Brains are busy. Try again in 30 seconds!",
+        "prompt_intro": "Act as a professional marketplace appraiser in January 2026."
     },
     "Español": {
-        "title": "🧞 Genio del Mercado Pro",
-        "select_cat": "¿Qué estás vendiendo?",
-        "model": "Modelo Exacto",
-        "storage": "Almacenamiento",
-        "condition": "Estado",
-        "upload": "Sube una foto clara",
-        "button": "Generar Tasación ✨",
-        "spinner": "Analizando datos del mercado...",
-        "success": "Tasación generada por",
-        "prompt_instruction": "USE SOLO PRECIOS DE REVENTA USADOS REALISTAS DE 2026."
+        "title": "🧞 ¡Mi Genio, Precio de Venta!",
+        "sidebar_header": "Ajustes del Genio",
+        "lang_label": "Elegir Idioma",
+        "cat_label": "¿Qué estás vendiendo?",
+        "model_label": "Nombre Exacto del Modelo",
+        "storage_label": "Capacidad de Almacenamiento",
+        "cond_label": "Estado del Artículo",
+        "upload_label": "Subir Foto del Artículo",
+        "btn_text": "¡Obtener Mi Precio! 💰",
+        "loading": "El Genio está analizando el mercado 2026...",
+        "success_msg": "Tasación Lista vía",
+        "error_msg": "Los cerebros están ocupados. ¡Intenta en 30 segundos!",
+        "prompt_intro": "Actúa como un tasador profesional del mercado en enero de 2026."
     }
 }
 
-# 2. Sidebar Language Selector
+# 2. UI Setup with Language Switcher
 with st.sidebar:
-    selected_lang = st.selectbox("🌐 Language / Idioma", list(LANGUAGES.keys()))
-    t = LANGUAGES[selected_lang] # 't' stands for text/translations
+    st.header("⚙️ Settings")
+    selected_lang = st.selectbox("🌐 Language", list(LANG_MAP.keys()))
+    t = LANG_MAP[selected_lang] # Shortcut for translations
 
 st.title(t["title"])
 st.markdown("---")
 
-# 3. Setup All API Clients
+# 3. Setup Clients
 def get_clients():
     clients = {}
     if "GOOGLE_API_KEY" in st.secrets:
@@ -53,22 +60,26 @@ def get_clients():
 
 clients = get_clients()
 
-# 4. Inputs using the translated labels
-category = st.selectbox(t["select_cat"], ["Select", "Phones", "Furniture"])
+# 4. Input Fields
+category = st.selectbox(t["cat_label"], ["Select", "Phones", "Furniture", "Other"])
 details = {}
 
 if category == "Phones":
     col1, col2 = st.columns(2)
     with col1:
-        details['model'] = st.text_input(t["model"])
-        details['storage'] = st.selectbox(t["storage"], ["128GB", "256GB", "512GB"])
+        details['model'] = st.text_input(t["model_label"], placeholder="iPhone 17 Pro Max")
+        details['storage'] = st.selectbox(t["storage_label"], ["128GB", "256GB", "512GB", "1TB"])
     with col2:
-        details['condition'] = st.select_slider(t["condition"], options=["Poor", "Fair", "Good", "Mint"])
+        details['condition'] = st.select_slider(t["cond_label"], options=["Broken", "Poor", "Fair", "Good", "Mint"])
+elif category == "Furniture":
+    details['type'] = st.text_input(t["cat_label"], placeholder="Sofa, Table, etc.")
+    details['condition'] = st.select_slider(t["cond_label"], options=["Used", "Refurbished", "Like New"])
 
-img_file = st.file_uploader(t["upload"], type=['jpg', 'png', 'jpeg'])
+img_file = st.file_uploader(t["upload_label"], type=['jpg', 'png', 'jpeg'])
 
-# 5. Logic
+# 5. The "Waterfall" with Language Awareness
 def run_appraisal(prompt, img):
+    # Try Google (Level 1)
     if 'google' in clients:
         try:
             response = clients['google'].models.generate_content(
@@ -77,7 +88,9 @@ def run_appraisal(prompt, img):
             )
             return response.text, "Google Gemini"
         except Exception:
-            pass
+            st.warning("⚠️ Google primary brain exhausted... trying backup.")
+
+    # Try Groq (Level 2)
     if 'groq' in clients:
         try:
             buffered = io.BytesIO()
@@ -89,15 +102,29 @@ def run_appraisal(prompt, img):
             )
             return response.choices[0].message.content, "Groq Llama 4"
         except Exception:
-            return "Error", "None"
+            return None, None
     return None, None
 
-if st.button(t["button"]):
+# 6. Action
+if st.button(t["btn_text"]):
     if img_file and category != "Select":
-        with st.spinner(t["spinner"]):
+        with st.spinner(t["loading"]):
             img = Image.open(img_file)
             today = datetime.date.today().strftime("%B %d, %2026")
-            final_prompt = f"DATE: {today}. Appraise {category}. Language: {selected_lang}. {t['prompt_instruction']}"
+            
+            # The prompt now includes the user's language preference
+            final_prompt = f"""
+            {t['prompt_intro']} 
+            TODAY'S DATE: {today}. 
+            LANGUAGE: Respond entirely in {selected_lang}.
+            ITEM: {category} - {details}.
+            GOAL: Provide a realistic USED resale value for 2026. Avoid retail prices.
+            FORMAT: Give a 'Quick Sale' price, 'Fair Market' price, and a short listing description.
+            """
+            
             result, provider = run_appraisal(final_prompt, img)
-            st.success(f"{t['success']} {provider}")
-            st.info(result)
+            if result:
+                st.success(f"✅ {t['success_msg']} {provider}")
+                st.info(result)
+            else:
+                st.error(t["error_msg"])
