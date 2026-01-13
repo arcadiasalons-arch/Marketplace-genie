@@ -6,12 +6,11 @@ import base64
 import io
 from PIL import Image
 
-# 1. Language Configuration Map
+# 1. Language Configuration
 LANG_MAP = {
-    "English": {
-        "title": "🧞 My Genie, Price to Sell!",
-        "sidebar_header": "Genie Settings",
-        "lang_label": "Choose Language",
+    "English 🇺🇸": {
+        "title": "My Genie, Price to Sell!",
+        "lang_ask": "Choose your language:",
         "cat_label": "What are you selling?",
         "model_label": "Exact Model Name",
         "storage_label": "Storage Capacity",
@@ -20,13 +19,11 @@ LANG_MAP = {
         "btn_text": "Get My Price! 💰",
         "loading": "Genie is analyzing the 2026 market...",
         "success_msg": "Appraisal Ready via",
-        "error_msg": "Both Brains are busy. Try again in 30 seconds!",
         "prompt_intro": "Act as a professional marketplace appraiser in January 2026."
     },
-    "Español": {
-        "title": "🧞 ¡Mi Genio, Precio de Venta!",
-        "sidebar_header": "Ajustes del Genio",
-        "lang_label": "Elegir Idioma",
+    "Español 🇲🇽": {
+        "title": "¡Mi Genio, Precio de Venta!",
+        "lang_ask": "Elige tu idioma:",
         "cat_label": "¿Qué estás vendiendo?",
         "model_label": "Nombre Exacto del Modelo",
         "storage_label": "Capacidad de Almacenamiento",
@@ -35,21 +32,24 @@ LANG_MAP = {
         "btn_text": "¡Obtener Mi Precio! 💰",
         "loading": "El Genio está analizando el mercado 2026...",
         "success_msg": "Tasación Lista vía",
-        "error_msg": "Los cerebros están ocupados. ¡Intenta en 30 segundos!",
         "prompt_intro": "Actúa como un tasador profesional del mercado en enero de 2026."
     }
 }
 
-# 2. UI Setup with Language Switcher
-with st.sidebar:
-    st.header("⚙️ Settings")
-    selected_lang = st.selectbox("🌐 Language", list(LANG_MAP.keys()))
-    t = LANG_MAP[selected_lang] # Shortcut for translations
+# 2. IMMEDIATE Language Selection (Top of Page)
+# Using radio buttons makes it visible without even clicking a dropdown
+selected_lang_name = st.radio(
+    "🌐 Language / Idioma", 
+    list(LANG_MAP.keys()), 
+    horizontal=True
+)
+t = LANG_MAP[selected_lang_name]
 
+# 3. Branding
 st.title(t["title"])
 st.markdown("---")
 
-# 3. Setup Clients
+# 4. Client Setup
 def get_clients():
     clients = {}
     if "GOOGLE_API_KEY" in st.secrets:
@@ -60,7 +60,7 @@ def get_clients():
 
 clients = get_clients()
 
-# 4. Input Fields
+# 5. Dynamic Form
 category = st.selectbox(t["cat_label"], ["Select", "Phones", "Furniture", "Other"])
 details = {}
 
@@ -71,15 +71,11 @@ if category == "Phones":
         details['storage'] = st.selectbox(t["storage_label"], ["128GB", "256GB", "512GB", "1TB"])
     with col2:
         details['condition'] = st.select_slider(t["cond_label"], options=["Broken", "Poor", "Fair", "Good", "Mint"])
-elif category == "Furniture":
-    details['type'] = st.text_input(t["cat_label"], placeholder="Sofa, Table, etc.")
-    details['condition'] = st.select_slider(t["cond_label"], options=["Used", "Refurbished", "Like New"])
 
 img_file = st.file_uploader(t["upload_label"], type=['jpg', 'png', 'jpeg'])
 
-# 5. The "Waterfall" with Language Awareness
+# 6. Waterfall Logic
 def run_appraisal(prompt, img):
-    # Try Google (Level 1)
     if 'google' in clients:
         try:
             response = clients['google'].models.generate_content(
@@ -88,9 +84,8 @@ def run_appraisal(prompt, img):
             )
             return response.text, "Google Gemini"
         except Exception:
-            st.warning("⚠️ Google primary brain exhausted... trying backup.")
+            st.warning("⚠️ Primary brain busy... switching to backup.")
 
-    # Try Groq (Level 2)
     if 'groq' in clients:
         try:
             buffered = io.BytesIO()
@@ -105,26 +100,22 @@ def run_appraisal(prompt, img):
             return None, None
     return None, None
 
-# 6. Action
+# 7. Action
 if st.button(t["btn_text"]):
     if img_file and category != "Select":
         with st.spinner(t["loading"]):
             img = Image.open(img_file)
             today = datetime.date.today().strftime("%B %d, %2026")
             
-            # The prompt now includes the user's language preference
             final_prompt = f"""
             {t['prompt_intro']} 
-            TODAY'S DATE: {today}. 
-            LANGUAGE: Respond entirely in {selected_lang}.
+            DATE: {today}. 
+            LANGUAGE: Respond in {selected_lang_name}.
             ITEM: {category} - {details}.
-            GOAL: Provide a realistic USED resale value for 2026. Avoid retail prices.
-            FORMAT: Give a 'Quick Sale' price, 'Fair Market' price, and a short listing description.
+            GOAL: Give a 2026 USED market price. 
             """
             
             result, provider = run_appraisal(final_prompt, img)
             if result:
                 st.success(f"✅ {t['success_msg']} {provider}")
                 st.info(result)
-            else:
-                st.error(t["error_msg"])
