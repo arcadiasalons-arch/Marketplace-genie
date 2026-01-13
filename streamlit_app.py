@@ -40,7 +40,7 @@ if st.button("Analyze & Value My Item ✨"):
                 5. **Pro Listing Description**: Write a catchy title and a short, honest description mentioning its used status."""
 
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash", 
+                    model="gemini-2.5-flash-lite", 
                     contents=[prompt, img]
                 )
                 
