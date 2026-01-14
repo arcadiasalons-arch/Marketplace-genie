@@ -49,7 +49,25 @@ elif st.session_state.step >= 2:
                 # --- PANDA: DATA ANALYTICS ---
                 new_row = {"Date": datetime.date.today(), "Item": st.session_state.item, "Value": 500} # Simulated val
                 st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame([new_row])], ignore_index=True)
-                
+                # Instead of importing pandasai, we use Gemini's built-in reasoning
+if not st.session_state.log_data.empty:
+    st.write("---")
+    st.subheader("🐼 Panda History Analytics")
+    
+    panda_query = st.text_input("Ask about your history:", "Summarize my appraisals")
+    
+    if panda_query:
+        # Convert the history dataframe to a text summary for the AI
+        history_text = st.session_state.log_data.to_string()
+        client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
+        
+        # Ask Gemini to process the data directly
+        analysis = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=f"DATA:\n{history_text}\n\nQUESTION: {panda_query}\nACT AS: Panda Analyst."
+        )
+        st.info(analysis.text)
+
                 # Display
                 st.success("Analysis Complete!")
                 colA, colB = st.columns(2)
