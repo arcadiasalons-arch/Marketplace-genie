@@ -1,3 +1,7 @@
+sreamlit
+pandas
+pandasai
+openai
 google-genai>=0.3.0
 groq>=0.11.0
 streamlit>=1.40.0
