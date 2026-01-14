@@ -1,95 +1,102 @@
 import streamlit as st
 from google import genai
-from google.genai import types 
+from google.genai import types
+import pandas as pd
+from pandasai import SmartDataframe
+from pandasai.llm import GoogleGemini # Direct integration
+from openai import OpenAI 
 import datetime
 import io
 import base64
-import time
 from PIL import Image
 
-# 1. Branding
+# 1. Branding & Multi-Brain Setup
 st.set_page_config(page_title="The Genius App", page_icon="🧞", layout="wide")
-st.title("🧞 The Genius App: Self-Healing Edition")
+st.title("🧞 The Genius App: Multi-Brain (No Extra Keys)")
 
-# 2. State Management
+# 2. Setup Persistent Logs
+if "log_data" not in st.session_state:
+    st.session_state.log_data = pd.DataFrame(columns=["Date", "Item", "Storage", "Condition", "Price"])
+
+# 3. Sidebar Configuration
+st.sidebar.header("🧠 Brain Settings")
+active_brain = st.sidebar.radio("Primary Valuation Brain", ["Gemini 2.0 (Live Market)", "Grok-3 (X/Sentiment)"])
+enable_panda = st.sidebar.toggle("Enable Panda Analytics", value=True)
+
+# 4. Sequential Interview
 if "step" not in st.session_state: st.session_state.step = 1
-if "log" not in st.session_state: st.session_state.log = {}
-
 def next_step(): st.session_state.step += 1
 
-# --- INTERVIEW INTERFACE ---
 if st.session_state.step == 1:
-    st.session_state.log['cat'] = st.selectbox("What are we selling?", ["Select", "Phone", "Laptop", "Other"])
-    if st.session_state.log['cat'] != "Select": st.button("Next ➡️", on_click=next_step)
+    cat = st.selectbox("Category", ["Select", "Phone", "Laptop", "Other"])
+    if cat != "Select":
+        st.session_state.cat = cat
+        st.button("Next ➡️", on_click=next_step)
 
 elif st.session_state.step == 2:
-    st.session_state.log['model'] = st.text_input("Exact Model Name")
-    if st.session_state.log['model']: st.button("Next ➡️", on_click=next_step)
+    model_name = st.text_input("Model Name", placeholder="e.g. iPhone 17 Pro")
+    if model_name:
+        st.session_state.model_name = model_name
+        st.button("Next ➡️", on_click=next_step)
 
 elif st.session_state.step == 3:
     col1, col2 = st.columns(2)
-    with col1: st.session_state.log['storage'] = st.selectbox("Storage", ["128GB", "256GB", "512GB", "1TB"])
-    with col2: st.session_state.log['cond'] = st.select_slider("Condition", ["Poor", "Fair", "Good", "Mint"])
+    with col1: storage = st.selectbox("Storage", ["128GB", "256GB", "512GB", "1TB"])
+    with col2: cond = st.select_slider("Condition", ["Poor", "Fair", "Good", "Mint"])
+    st.session_state.details = {"storage": storage, "cond": cond}
     st.button("Next ➡️", on_click=next_step)
 
 elif st.session_state.step >= 4:
-    st.session_state.log['imgs'] = st.file_uploader("Upload Item Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
+    imgs = st.file_uploader("Upload 360° Photos", accept_multiple_files=True)
+    
+    if imgs:
+        if st.button("🚀 Begin Multi-Brain Process"):
+            with st.spinner(f"Consulting {active_brain}..."):
+                try:
+                    # --- VALUATION LOGIC ---
+                    val_prompt = f"Appraise {st.session_state.model_name} {st.session_state.details['storage']} in {st.session_state.details['cond']} condition for Jan 2026."
+                    
+                    if active_brain == "Gemini 2.0 (Live Market)":
+                        client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
+                        response = client.models.generate_content(
+                            model="gemini-2.0-flash",
+                            contents=[val_prompt, Image.open(imgs[0])],
+                            config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+                        )
+                        result_text = response.text
+                    else:
+                        grok = OpenAI(api_key=st.secrets["XAI_API_KEY"], base_url="https://api.x.ai/v1")
+                        response = grok.chat.completions.create(
+                            model="grok-3",
+                            messages=[{"role": "user", "content": val_prompt}]
+                        )
+                        result_text = response.choices[0].message.content
 
-# 3. THE SELF-HEALING ENGINE (Exponential Backoff)
-def call_genie_with_retry(client, prompt, image, max_retries=3):
-    delay = 2  # Start with 2 second delay
-    for i in range(max_retries):
-        try:
-            # We try Gemini 1.5 Flash first as it has higher free limits in 2026
-            response = client.models.generate_content(
-                model="gemini-1.5-flash", 
-                contents=[prompt, image],
-                config=types.GenerateContentConfig(
-                    tools=[types.Tool(google_search=types.GoogleSearch())]
-                )
-            )
-            return response
-        except Exception as e:
-            if "429" in str(e) and i < max_retries - 1:
-                st.warning(f"🧞 Genie is catching its breath... Retrying in {delay}s (Attempt {i+1}/{max_retries})")
-                time.sleep(delay)
-                delay *= 2 # Wait longer each time
-            else:
-                raise e
+                    st.success("Analysis Complete!")
+                    st.write(result_text)
 
-# 4. Execution
-if st.session_state.step >= 4 and st.session_state.log.get('imgs'):
-    if st.button("🚀 Begin Magic Process"):
-        with st.spinner("Genius is analyzing market data (this may take 30-60s due to free tier limits)..."):
-            try:
-                client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-                
-                # Setup
-                val_prompt = f"ACT AS: The Genius App. Search live Jan 2026 prices for {st.session_state.log['model']} {st.session_state.log['storage']} in {st.session_state.log['cond']} condition. Provide Same Day, 1 Week, and 1 Month prices."
-                
-                # Use only the 1st image to save quota
-                main_img_file = st.session_state.log['imgs'][0]
-                main_img = Image.open(main_img_file)
-                
-                # Execute with retry logic
-                response = call_genie_with_retry(client, val_prompt, main_img)
-                
-                st.success("Appraisal Successful!")
-                
-                # 5. Display & Video Reel
-                main_img_file.seek(0)
-                img_b64 = base64.b64encode(main_img_file.read()).decode()
-                
-                t1, t2, t3 = st.tabs(["⚡ Same Day", "📅 1 Week", "🏆 1 Month"])
-                
-                def get_reel(color):
-                    return f'<div style="background:{color}; padding:10px; border-radius:10px; text-align:center;"><img src="data:image/jpeg;base64,{img_b64}" width="100%" style="border-radius:10px; animation: pulse 4s infinite;"></div><style>@keyframes pulse {{ 0%{{opacity:0.8;}} 50%{{opacity:1;}} 100%{{opacity:0.8;}} }}</style>'
+                    # --- PANDAS AI (The History Brain) ---
+                    # 1. Add this appraisal to our local log
+                    new_entry = {
+                        "Date": datetime.date.today(),
+                        "Item": st.session_state.model_name,
+                        "Storage": st.session_state.details['storage'],
+                        "Condition": st.session_state.details['cond'],
+                        "Price": 1000 # You can replace with logic to extract price from text
+                    }
+                    st.session_state.log_data = pd.concat([st.session_state.log_data, pd.DataFrame([new_entry])], ignore_index=True)
 
-                with t1:
-                    st.markdown(get_reel("#FF4B4B"), unsafe_allow_html=True)
-                    st.write(response.text)
-                with t2: st.markdown(get_reel("#FFAA00"), unsafe_allow_html=True)
-                with t3: st.markdown(get_reel("#00C851"), unsafe_allow_html=True)
+                    if enable_panda:
+                        st.write("---")
+                        st.subheader("🐼 Panda Analytics (Chat with your history)")
+                        # We use Gemini as the Brain for Panda so NO extra key is needed
+                        panda_llm = GoogleGemini(api_key=st.secrets["GOOGLE_API_KEY"])
+                        sdf = SmartDataframe(st.session_state.log_data, config={"llm": panda_llm})
+                        
+                        panda_query = st.text_input("Ask Panda about your sales history:", "Show me a summary of today's appraisals")
+                        if panda_query:
+                            panda_res = sdf.chat(panda_query)
+                            st.info(panda_res)
 
-            except Exception as e:
-                st.error("The Free Tier is currently overloaded. Please wait 1 minute before clicking 'Begin' again.")
+                except Exception as e:
+                    st.error(f"Genie Hiccup: {e}")
