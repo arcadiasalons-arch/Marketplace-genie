@@ -1,121 +1,87 @@
 import streamlit as st
 from google import genai
-from groq import Groq
 import datetime
-import base64
 import io
+import base64
 from PIL import Image
 
-# 1. Language Configuration
-LANG_MAP = {
-    "English 🇺🇸": {
-        "title": "My Genie, Price to Sell!",
-        "lang_ask": "Choose your language:",
-        "cat_label": "What are you selling?",
-        "model_label": "Exact Model Name",
-        "storage_label": "Storage Capacity",
-        "cond_label": "Condition",
-        "upload_label": "Upload Item Photo",
-        "btn_text": "Get My Price! 💰",
-        "loading": "Genie is analyzing the 2026 market...",
-        "success_msg": "Appraisal Ready via",
-        "prompt_intro": "Act as a professional marketplace appraiser in January 2026."
-    },
-    "Español 🇲🇽": {
-        "title": "¡Mi Genio, Precio de Venta!",
-        "lang_ask": "Elige tu idioma:",
-        "cat_label": "¿Qué estás vendiendo?",
-        "model_label": "Nombre Exacto del Modelo",
-        "storage_label": "Capacidad de Almacenamiento",
-        "cond_label": "Estado del Artículo",
-        "upload_label": "Subir Foto del Artículo",
-        "btn_text": "¡Obtener Mi Precio! 💰",
-        "loading": "El Genio está analizando el mercado 2026...",
-        "success_msg": "Tasación Lista vía",
-        "prompt_intro": "Actúa como un tasador profesional del mercado en enero de 2026."
-    }
-}
+# 1. Branding & The Genius Methodology
+st.set_page_config(page_title="The Genius App", page_icon="🧞", layout="wide")
+st.title("🧞 The Genius App: Real Data, Actual Results, AI Magic!")
+st.write("---")
 
-# 2. IMMEDIATE Language Selection (Top of Page)
-# Using radio buttons makes it visible without even clicking a dropdown
-selected_lang_name = st.radio(
-    "🌐 Language / Idioma", 
-    list(LANG_MAP.keys()), 
-    horizontal=True
-)
-t = LANG_MAP[selected_lang_name]
+# 2. Sequential Genius Interview (Appears one by one)
+if "step" not in st.session_state: st.session_state.step = 1
+if "log" not in st.session_state: st.session_state.log = {}
 
-# 3. Branding
-st.title(t["title"])
-st.markdown("---")
+def next_step(): st.session_state.step += 1
 
-# 4. Client Setup
-def get_clients():
-    clients = {}
-    if "GOOGLE_API_KEY" in st.secrets:
-        clients['google'] = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-    if "GROQ_API_KEY" in st.secrets:
-        clients['groq'] = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    return clients
+# --- INTERVIEW STEPS ---
+if st.session_state.step >= 1:
+    st.session_state.log['cat'] = st.selectbox("What are you selling?", ["Select", "Phone", "Laptop", "Other"])
+    if st.session_state.log['cat'] != "Select" and st.session_state.step == 1: st.button("Next ➡️", on_click=next_step)
 
-clients = get_clients()
+if st.session_state.step >= 2:
+    st.session_state.log['model'] = st.text_input("Exact Model Name", placeholder="e.g. iPhone 17 Pro")
+    if st.session_state.log['model'] and st.session_state.step == 2: st.button("Next ➡️", on_click=next_step)
 
-# 5. Dynamic Form
-category = st.selectbox(t["cat_label"], ["Select", "Phones", "Furniture", "Other"])
-details = {}
-
-if category == "Phones":
+if st.session_state.step >= 3:
     col1, col2 = st.columns(2)
     with col1:
-        details['model'] = st.text_input(t["model_label"], placeholder="iPhone 17 Pro Max")
-        details['storage'] = st.selectbox(t["storage_label"], ["128GB", "256GB", "512GB", "1TB"])
+        st.session_state.log['storage'] = st.selectbox("Storage", ["128GB", "256GB", "512GB", "1TB"])
     with col2:
-        details['condition'] = st.select_slider(t["cond_label"], options=["Broken", "Poor", "Fair", "Good", "Mint"])
+        st.session_state.log['cond'] = st.select_slider("Condition", ["Poor", "Fair", "Good", "Mint"])
+    if st.session_state.step == 3: st.button("Next ➡️", on_click=next_step)
 
-img_file = st.file_uploader(t["upload_label"], type=['jpg', 'png', 'jpeg'])
+if st.session_state.step >= 4:
+    st.session_state.log['img'] = st.file_uploader("Upload Item Photo for High-Res Analysis", type=['jpg', 'png'])
 
-# 6. Waterfall Logic
-def run_appraisal(prompt, img):
-    if 'google' in clients:
-        try:
-            response = clients['google'].models.generate_content(
-                model="gemini-2.5-flash-lite", 
-                contents=[prompt, img]
-            )
-            return response.text, "Google Gemini"
-        except Exception:
-            st.warning("⚠️ Primary brain busy... switching to backup.")
-
-    if 'groq' in clients:
-        try:
+# 3. The Magic Process & Triple Timeframe Logic
+if st.session_state.step >= 4 and st.session_state.log.get('img'):
+    if st.button("✨ Begin Magic Process"):
+        with st.spinner("Genius is scouring the internet..."):
+            # --- AI BRAIN VALUATION ---
+            client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
+            img = Image.open(st.session_state.log['img'])
+            
+            prompt = f"DATE: Jan 2026. Appraise {st.session_state.log['model']}. Provide: 1. Same Day Price, 2. One Week Price, 3. One Month Price. Write a pro description for each."
+            response = client.models.generate_content(model="gemini-2.5-flash-lite", contents=[prompt, img])
+            
+            st.success("Analysis Complete!")
+            
+            # 4. Triple Timeframe Display
+            t1, t2, t3 = st.tabs(["⚡ Same Day", "📅 1 Week", "🏆 1 Month"])
+            
+            # --- SIMULATED VIDEO ENGINE (CSS ANIMATION) ---
+            # We convert the image to base64 so it can be 'animated' in the video
             buffered = io.BytesIO()
             img.save(buffered, format="JPEG")
-            img_str = base64.b64encode(buffered.getvalue()).decode()
-            response = clients['groq'].chat.completions.create(
-                model="meta-llama/llama-4-scout-17b-16e-instruct",
-                messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_str}"}}]}]
-            )
-            return response.choices[0].message.content, "Groq Llama 4"
-        except Exception:
-            return None, None
-    return None, None
+            img_b64 = base64.b64encode(buffered.getvalue()).decode()
 
-# 7. Action
-if st.button(t["btn_text"]):
-    if img_file and category != "Select":
-        with st.spinner(t["loading"]):
-            img = Image.open(img_file)
-            today = datetime.date.today().strftime("%B %d, %2026")
+            def generate_video_html(price, label, color):
+                return f"""
+                <div style="background:{color}; padding:20px; border-radius:15px; text-align:center; animation: fadeIn 2s;">
+                    <h2 style="color:white; font-family:sans-serif;">{label}</h2>
+                    <div style="overflow:hidden; border-radius:10px;">
+                        <img src="data:image/jpeg;base64,{img_b64}" style="width:100%; animation: zoom 10s infinite alternate;">
+                    </div>
+                    <h1 style="color:white; font-size:50px;">{price}</h1>
+                    <p style="color:white;">{st.session_state.log['model']} - {st.session_state.log['cond']}</p>
+                </div>
+                <style>
+                @keyframes zoom {{ from {{transform: scale(1);}} to {{transform: scale(1.2);}} }}
+                @keyframes fadeIn {{ from {{opacity: 0;}} to {{opacity: 1;}} }}
+                </style>
+                """
+
+            with t1:
+                st.markdown(generate_video_html("QUICK SALE", "SAME DAY", "#FF4B4B"), unsafe_allow_html=True)
+                st.write(response.text)
             
-            final_prompt = f"""
-            {t['prompt_intro']} 
-            DATE: {today}. 
-            LANGUAGE: Respond in {selected_lang_name}.
-            ITEM: {category} - {details}.
-            GOAL: Give a 2026 USED market price. 
-            """
-            
-            result, provider = run_appraisal(final_prompt, img)
-            if result:
-                st.success(f"✅ {t['success_msg']} {provider}")
-                st.info(result)
+            with t2:
+                st.markdown(generate_video_html("MARKET PRICE", "1 WEEK", "#FFAA00"), unsafe_allow_html=True)
+                st.write("Best for Facebook Marketplace or local groups.")
+
+            with t3:
+                st.markdown(generate_video_html("PREMIUM VALUE", "1 MONTH", "#00C851"), unsafe_allow_html=True)
+                st.write("Best for eBay or specialized collectors.")
