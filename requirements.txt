@@ -1,8 +1,7 @@
-sreamlit
+streamlit>=1.52.0
 pandas
 pandasai
-openai
-google-genai>=0.3.0
-groq>=0.11.0
-streamlit>=1.40.0
+openai>=1.50.0
+google-genai>=1.0.0
+groq>=1.0.0
 pillow>=10.0.0
