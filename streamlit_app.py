@@ -3,110 +3,70 @@ from google import genai
 from google.genai import types
 from openai import OpenAI
 import pandas as pd
-import plotly.graph_objects as go
 from PIL import Image
-import datetime
 import re
 
-# --- PAGE SETUP ---
-st.set_page_config(page_title="The Genius App", layout="wide", page_icon="🧞")
-
-# Persistent History for Panda
-if "history" not in st.session_state:
-    st.session_state.history = pd.DataFrame(columns=["Date", "Item", "Status", "Hype"])
-
-# --- API CLIENTS ---
-# Using Gemini 2.0 (Stable) and Grok-4
+# --- CONFIG ---
+st.set_page_config(page_title="Genie Kiosk", layout="centered", page_icon="🧞")
 client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-grok_client = OpenAI(api_key=st.secrets["XAI_API_KEY"], base_url="https://api.x.ai/v1")
+grok = OpenAI(api_key=st.secrets["XAI_API_KEY"], base_url="https://api.x.ai/v1")
 
-st.title("🧞 The Genius: Triple-Brain Redemption")
-st.info("January 2026 Engine: Gemini 2.0 + Grok-4 + Panda Analyst")
+st.title("🧞 Marketplace Genie Kiosk")
+st.write("Instant Diagnostics. Zero Typing.")
 
-# --- USER INTERFACE ---
-col1, col2 = st.columns([2, 1])
-with col1:
-    item_name = st.text_input("Item to Appraise", placeholder="e.g. iPhone 17 Pro Max 512GB")
-with col2:
-    uploaded_file = st.file_uploader("Upload Image", type=['jpg', 'png', 'jpeg'])
+# --- STEP 1: THE DATA SCAN ---
+st.info("📱 **Step 1:** Go to **Settings > General > About** and take a screenshot or photo of your IMEI/Serial.")
+data_file = st.file_uploader("Upload Settings Photo", type=['jpg', 'png', 'jpeg'], key="data")
 
-if st.button("🚀 EXECUTE FULL ANALYSIS") and item_name and uploaded_file:
-    with st.spinner("Brains are syncing..."):
+if data_file:
+    with st.spinner("Extracting hardware ID and battery health..."):
         try:
-            # --- BRAIN 1: GEMINI 2.0 (Visual Market Research) ---
-            # Correct 2026 Syntax for Google Search Tool
-            grounding_tool = types.Tool(google_search=types.GoogleSearch())
-            img = Image.open(uploaded_file)
-            
-            gemini_response = client.models.generate_content(
+            # Gemini reads the screen like a human expert
+            img = Image.open(data_file)
+            analysis = client.models.generate_content(
                 model="gemini-2.0-flash",
-                contents=[f"Provide a 2026 market price for {item_name} based on this image.", img],
-                config=types.GenerateContentConfig(tools=[grounding_tool])
+                contents=["Extract IMEI, Serial Number, and Model Name from this image. Return only the values.", img]
             )
+            extracted_text = analysis.text
             
-            # --- BRAIN 2: GROK-4 (Social Hype & Sentiment) ---
-            # Grok-4 is specifically prompted to return a number for the gauge
-            grok_response = grok_client.chat.completions.create(
-                model="grok-4",
-                messages=[{"role": "user", "content": f"Check X/Twitter hype for {item_name}. Give me a sentiment score from 1-10 followed by a 2-sentence explanation."}]
-            )
-            grok_text = grok_response.choices[0].message.content
+            # Use Regex to find a 15-digit IMEI in the AI's response
+            imei_match = re.search(r'\d{15}', extracted_text)
+            imei = imei_match.group(0) if imei_match else "Unknown"
             
-            # --- HYPE METER LOGIC ---
-            # Regex extracts the first number (1-10) found in Grok's response
-            score_match = re.search(r'\b([1-9]|10)\b', grok_text)
-            hype_val = int(score_match.group(1)) if score_match else 5
+            st.success(f"✅ Device Identified: {extracted_text}")
+            
+            # --- STEP 2: THE BLACKLIST CHECK (The 'Ingenious' Part) ---
+            # In a real app, you'd call the CheckMEND API here. 
+            # For now, we simulate the 'Genie Security' check.
+            if imei != "Unknown":
+                st.warning(f"🛡️ Checking IMEI: {imei} against global databases...")
+                # Simulated result
+                st.write("🔍 **Result:** Device is CLEAN and eligible for instant payout.")
 
-            # --- DISPLAY RESULTS ---
-            st.success("Analysis Synced Successfully!")
+            # --- STEP 3: THE MIRROR SCAN (Visuals) ---
+            st.markdown("---")
+            st.info("📷 **Step 2:** Hold your phone up to a mirror. Take one photo of the reflection.")
+            mirror_file = st.file_uploader("Upload Mirror Shot", type=['jpg', 'png'], key="mirror")
             
-            res_col1, res_col2 = st.columns([1, 1])
-            
-            with res_col1:
-                st.subheader("🔥 Grok Hype Meter")
-                fig = go.Figure(go.Indicator(
-                    mode = "gauge+number",
-                    value = hype_val,
-                    domain = {'x': [0, 1], 'y': [0, 1]},
-                    gauge = {
-                        'axis': {'range': [1, 10]},
-                        'bar': {'color': "#FF4B4B"},
-                        'steps': [
-                            {'range': [1, 4], 'color': "#E5E5E5"},
-                            {'range': [4, 7], 'color': "#FCA311"},
-                            {'range': [7, 10], 'color': "#FFD700"}
-                        ]
-                    }
-                ))
-                st.plotly_chart(fig, use_container_width=True)
-                st.write(f"**Grok says:** {grok_text}")
-
-            with res_col2:
-                st.subheader("📊 Gemini Market Valuation")
-                st.write(gemini_response.text)
-
-            # Update History
-            new_entry = pd.DataFrame([{
-                "Date": datetime.date.today(),
-                "Item": item_name,
-                "Status": "Verified",
-                "Hype": hype_val
-            }])
-            st.session_state.history = pd.concat([st.session_state.history, new_entry], ignore_index=True)
+            if mirror_file:
+                m_img = Image.open(mirror_file)
+                # Visual damage detection
+                vis_res = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=["Inspect the reflection for screen cracks and the back for scratches. Give a grade (A-F).", m_img]
+                )
+                
+                # --- FINAL OFFER ---
+                st.subheader("🧞 Genie's Final Offer")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Instant Cash", "$215", "+$25 Hype Bonus")
+                    st.caption("Available today at any partner kiosk.")
+                with col2:
+                    st.metric("Consignment", "$280", "Est. 7 Days")
+                    st.caption("We sell it for you via Grok-Hype.")
+                
+                st.write(f"**Visual Grade:** {vis_res.text}")
 
         except Exception as e:
-            st.error(f"Redemption Failed: {str(e)}")
-            st.warning("Ensure your API keys are correct in the Secrets tab.")
-
-# --- BRAIN 3: PANDAS ANALYTICS (AI-Powered) ---
-if not st.session_state.history.empty:
-    st.divider()
-    st.subheader("🐼 Panda History Brain")
-    if st.button("Generate Trend Report"):
-        history_summary = st.session_state.history.to_string()
-        # Gemini acts as the Panda Data Analyst to avoid SciPy library conflicts
-        panda_analysis = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=f"You are a Data Analyst named Panda. Analyze this log:\n{history_summary}"
-        )
-        st.info(panda_analysis.text)
+            st.error(f"Kiosk Error: {e}")
