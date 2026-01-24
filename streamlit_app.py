@@ -1,102 +1,29 @@
-import streamlit as st
-from google import genai
-from google.genai import types
-from openai import OpenAI
-import pandas as pd
-from PIL import Image
-import re
+import time
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-# --- CONFIG ---
-st.set_page_config(page_title="Genie Kiosk", layout="centered", page_icon="🧞")
-client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-grok = OpenAI(api_key=st.secrets["XAI_API_KEY"], base_url="https://api.x.ai/v1")
-
-st.title("🧞 Marketplace Genie Kiosk")
-st.write("Instant Diagnostics. Zero Typing.")
-
-# --- STEP 1: THE DATA SCAN ---
-st.info("📱 **Step 1:** Go to **Settings > General > About** and take a screenshot or photo of your IMEI/Serial.")
-data_file = st.file_uploader("Upload Settings Photo", type=['jpg', 'png', 'jpeg'], key="data")
-
-if data_file:
-    with st.spinner("Extracting hardware ID and battery health..."):
-        try:
-            # Gemini reads the screen like a human expert
-            img = Image.open(data_file)
-            analysis = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=["Extract IMEI, Serial Number, and Model Name from this image. Return only the values.", img]
-            )
-            extracted_text = analysis.text
-            
-            # Use Regex to find a 15-digit IMEI in the AI's response
-            imei_match = re.search(r'\d{15}', extracted_text)
-            imei = imei_match.group(0) if imei_match else "Unknown"
-            
-            st.success(f"✅ Device Identified: {extracted_text}")
-            
-            # --- STEP 2: THE BLACKLIST CHECK (The 'Ingenious' Part) ---
-            # In a real app, you'd call the CheckMEND API here. 
-            # For now, we simulate the 'Genie Security' check.
-            if imei != "Unknown":
-                st.warning(f"🛡️ Checking IMEI: {imei} against global databases...")
-                # Simulated result
-                st.write("🔍 **Result:** Device is CLEAN and eligible for instant payout.")
-
-            # --- STEP 3: THE MIRROR SCAN (Visuals) ---
-            st.markdown("---")
-            st.info("📷 **Step 2:** Hold your phone up to a mirror. Take one photo of the reflection.")
-            mirror_file = st.file_uploader("Upload Mirror Shot", type=['jpg', 'png'], key="mirror")
-            
-            if mirror_file:
-                m_img = Image.open(mirror_file)
-                # Visual damage detection
-                vis_res = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=["Inspect the reflection for screen cracks and the back for scratches. Give a grade (A-F).", m_img]
-                )
-                
-                # --- FINAL OFFER ---
-                st.subheader("🧞 Genie's Final Offer")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Instant Cash", "$215", "+$25 Hype Bonus")
-                    st.caption("Available today at any partner kiosk.")
-                with col2:
-                    st.metric("Consignment", "$280", "Est. 7 Days")
-                    st.caption("We sell it for you via Grok-Hype.")
-                
-                st.write(f"**Visual Grade:** {vis_res.text}")
-
-        except Exception as e:
-            st.error(f"Kiosk Error: {e}")
-import qrcode
-from io import BytesIO
-import segno
-
-def generate_voucher(imei_data, item_name):
-    # Create a unique string for the QR code
-    voucher_data = f"GENIE-2026-{imei_data}-{item_name}"
-    
-    # Generate the QR code using Segno (better for mobile scanning)
-    qr = segno.make(voucher_data)
-    
-    # Save to a buffer to display in Streamlit
-    out = BytesIO()
-    qr.save(out, kind='png', scale=10)
-    return out.getvalue()
-
-# Trigger this after the user accepts the offer
-if st.button("🧧 Claim Instant Payout Voucher"):
-    # Using the IMEI we extracted earlier
-    current_imei = st.session_state.get('imei', '000000000000000')
-    qr_img = generate_voucher(current_imei, item_name)
-    
-    st.image(qr_img, caption="Present this at any Genie Kiosk", width=300)
-    st.download_button(
-        label="Download Voucher",
-        data=qr_img,
-        file_name=f"Genie_Voucher_{item_name}.png",
-        mime="image/png"
+# This decorator tells the function to retry if it hits a 429 error
+@retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
+def call_gemini_safely(prompt, image):
+    return client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=[prompt, image],
+        config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
     )
-    st.balloons()
+
+if st.button("🚀 EXECUTE FULL ANALYSIS") and item_name and uploaded_file:
+    with st.spinner("Genie is busy, retrying if needed..."):
+        try:
+            img = Image.open(uploaded_file)
+            # Call our new 'safe' function
+            gemini_response = call_gemini_safely(
+                f"Appraise {item_name} for Jan 2026 market.", 
+                img
+            )
+            st.success("Analysis Complete!")
+            st.write(gemini_response.text)
+            
+        except Exception as e:
+            if "429" in str(e):
+                st.error("🧞 The Genie is exhausted! The daily limit of 100 requests has been reached. Try again in a few hours or upgrade to Tier 1.")
+            else:
+                st.error(f"Error: {e}")
