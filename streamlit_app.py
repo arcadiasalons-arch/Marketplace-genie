@@ -70,3 +70,33 @@ if data_file:
 
         except Exception as e:
             st.error(f"Kiosk Error: {e}")
+import qrcode
+from io import BytesIO
+import segno
+
+def generate_voucher(imei_data, item_name):
+    # Create a unique string for the QR code
+    voucher_data = f"GENIE-2026-{imei_data}-{item_name}"
+    
+    # Generate the QR code using Segno (better for mobile scanning)
+    qr = segno.make(voucher_data)
+    
+    # Save to a buffer to display in Streamlit
+    out = BytesIO()
+    qr.save(out, kind='png', scale=10)
+    return out.getvalue()
+
+# Trigger this after the user accepts the offer
+if st.button("🧧 Claim Instant Payout Voucher"):
+    # Using the IMEI we extracted earlier
+    current_imei = st.session_state.get('imei', '000000000000000')
+    qr_img = generate_voucher(current_imei, item_name)
+    
+    st.image(qr_img, caption="Present this at any Genie Kiosk", width=300)
+    st.download_button(
+        label="Download Voucher",
+        data=qr_img,
+        file_name=f"Genie_Voucher_{item_name}.png",
+        mime="image/png"
+    )
+    st.balloons()
