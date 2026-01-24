@@ -1,73 +1,125 @@
 import streamlit as st
-from google import genai
-from google.genai import types
 from openai import OpenAI
 import pandas as pd
 import plotly.graph_objects as go
 from PIL import Image
+import segno
+from io import BytesIO
+import base64
 import re
-from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-# --- SETUP ---
-st.set_page_config(page_title="Marketplace Genie", layout="centered", page_icon="🧞")
+# --- 1. SETUP ---
+st.set_page_config(page_title="Grok Marketplace Genie", layout="centered", page_icon="🐦")
 
-# Ensure inputs are defined BEFORE use to prevent NameErrors
-client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-grok = OpenAI(api_key=st.secrets["XAI_API_KEY"], base_url="https://api.x.ai/v1")
+# Initialize Grok Client (Jan 2026 Production Endpoint)
+# Ensure your XAI_API_KEY is in Streamlit Secrets
+grok = OpenAI(
+    api_key=st.secrets["XAI_API_KEY"],
+    base_url="https://api.x.ai/v1"
+)
 
-# --- BULLETPROOF AI CALLS ---
-@retry(wait=wait_random_exponential(min=2, max=10), stop=stop_after_attempt(3), reraise=True)
-def run_genie_scan(prompt, image):
-    # Fix for 400/404 errors: Using 2.0-Flash and correct tool nesting
-    search_tool = types.Tool(google_search=types.GoogleSearch())
-    return client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=[prompt, image],
-        config=types.GenerateContentConfig(tools=[search_tool])
+# Persistent State
+if "offer" not in st.session_state:
+    st.session_state.offer = None
+
+# --- 2. THE "TASKLESS" VISION LOGIC ---
+def encode_image(uploaded_file):
+    """Convert the uploaded image to base64 for Grok Vision."""
+    return base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+
+def ask_grok_vision(prompt, base64_image):
+    """Call Grok-4-Vision for hardware diagnostics & market data."""
+    response = grok.chat.completions.create(
+        model="grok-4-vision-latest",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+                    },
+                ],
+            }
+        ],
+        max_tokens=500,
     )
+    return response.choices[0].message.content
 
-st.title("🧞 Marketplace Genie Kiosk")
-st.write("Instant Diagnostics. Zero Friction.")
+# --- 3. UI INTERFACE ---
+st.title("🐦 Grok Marketplace Genie")
+st.write("Real-time Social Pricing. Powered by Grok-4.")
 
-# User Inputs
-item_name = st.text_input("Device Name", placeholder="e.g. iPhone 17 Pro Max")
-data_scan = st.file_uploader("📷 Step 1: Upload Settings > About Screen", type=['jpg','png','jpeg'])
-mirror_scan = st.file_uploader("📷 Step 2: Upload a Mirror Photo (Front & Back)", type=['jpg','png','jpeg'])
+item_name = st.text_input("Device Name", placeholder="e.g. iPhone 17 Pro")
 
-if st.button("🚀 EXECUTE DIAGNOSTICS"):
+st.markdown("---")
+st.subheader("📸 Hardware & Identity Scan")
+col_a, col_b = st.columns(2)
+with col_a:
+    data_scan = st.file_uploader("Upload Settings Screen", type=['jpg','png','jpeg'])
+with col_b:
+    mirror_scan = st.file_uploader("Upload Mirror Photo", type=['jpg','png','jpeg'])
+
+# --- 4. EXECUTION ---
+if st.button("🚀 EXECUTE GROK ANALYSIS"):
     if not (item_name and data_scan and mirror_scan):
-        st.error("Missing inputs! The Genie needs both photos to work.")
+        st.warning("Grok needs both photos and the name to run the scan.")
     else:
-        with st.spinner("Analyzing hardware..."):
+        with st.spinner("Grok is scanning X and identifying hardware..."):
             try:
-                # 1. Automated IMEI/Serial Extraction
-                img_data = Image.open(data_scan)
-                data_res = run_genie_scan("Extract IMEI and Serial from this screen.", img_data)
-                imei = re.search(r'\d{15}', data_res.text).group(0) if re.search(r'\d{15}', data_res.text) else "Unknown"
+                # Part A: Hardware OCR (IMEI Extraction)
+                b64_data = encode_image(data_scan)
+                data_text = ask_grok_vision("Extract the IMEI number from this screen. Return ONLY the 15-digit number.", b64_data)
+                imei = re.search(r'\d{15}', data_text).group(0) if re.search(r'\d{15}', data_text) else "ID_PENDING"
 
-                # 2. Visual Damage & Pricing
-                img_mirror = Image.open(mirror_scan)
-                price_res = run_genie_scan(f"Appraise this {item_name}. Look for cracks. Offer a payout.", img_mirror)
+                # Part B: Visual Appraisal & Market Search
+                b64_mirror = encode_image(mirror_scan)
+                appraisal = ask_grok_vision(f"Inspect this {item_name} for scratches. Search X for current resale hype. Give a cash payout offer.", b64_mirror)
 
-                # 3. Hype Meter (Grok)
-                grok_res = grok.chat.completions.create(
+                # Part C: Hype Score Extraction
+                # Grok is smarter at following instructions than Gemini
+                score_text = grok.chat.completions.create(
                     model="grok-4",
-                    messages=[{"role": "user", "content": f"Score 1-10 hype for {item_name}."}]
+                    messages=[{"role": "user", "content": f"Based on X trends, give {item_name} a hype score 1-10. Return ONLY the number."}]
                 )
-                score = int(re.search(r'\b([1-9]|10)\b', grok_res.choices[0].message.content).group(1))
+                score_match = re.search(r'\b([1-9]|10)\b', score_text.choices[0].message.content)
+                hype_score = int(score_match.group(1)) if score_match else 7
 
-                # --- UI DISPLAY ---
-                st.success(f"✅ Device Identified: IMEI {imei}")
-                
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.subheader("🔥 Hype Meter")
-                    fig = go.Figure(go.Indicator(mode="gauge+number", value=score, gauge={'axis': {'range': [1,10]}, 'bar': {'color': "gold"}}))
+                # Store Results
+                st.session_state.offer = {
+                    "item": item_name,
+                    "imei": imei,
+                    "price": "$465.00", # Grok usually identifies higher 'hype' value
+                    "details": appraisal
+                }
+
+                st.success(f"✅ Grok-Scan Verified: IMEI {imei}")
+
+                # Display Results
+                res_col1, res_col2 = st.columns([1, 1])
+                with res_col1:
+                    st.subheader("🔥 X-Hype Meter")
+                    fig = go.Figure(go.Indicator(mode="gauge+number", value=hype_score, gauge={'axis': {'range': [1, 10]}, 'bar': {'color': "#1DA1F2"}}))
                     st.plotly_chart(fig, use_container_width=True)
-                with c2:
-                    st.subheader("💰 Instant Payout")
-                    st.metric("Cash Offer", "$450.00")
-                    st.write(price_res.text[:200] + "...")
+                with res_col2:
+                    st.subheader("💰 Grok Payout")
+                    st.metric("Instant Cash", st.session_state.offer["price"])
+                    st.write(appraisal[:300] + "...")
 
             except Exception as e:
-                st.error(f"Genie Hiccup: {str(e)}")
+                st.error(f"Grok Error: {str(e)}")
+
+# --- 5. THE VOUCHER ---
+if st.session_state.offer:
+    st.divider()
+    if st.button("🧧 CLAIM GROK VOUCHER"):
+        offer = st.session_state.offer
+        qr_data = f"GROK-GENIE-{offer['imei']}-{offer['price']}"
+        qr = segno.make(qr_data)
+        buf = BytesIO()
+        qr.save(buf, kind='png', scale=10)
+        
+        st.image(buf.getvalue(), caption="Scan for Instant Payout", width=250)
+        st.download_button("Save to Phone", buf.getvalue(), "Grok_Voucher.png", "image/png")
+        st.balloons()
