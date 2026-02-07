@@ -1,20 +1,40 @@
-# --- CONFIGURATION & STYLING ---
+import streamlit as st
+from google import genai
+import json
+import base64
+from PIL import Image
+import io
+
+# --- 1. SETTINGS & STYLING ---
 st.set_page_config(page_title="Marketplace Genie Pro", page_icon="🧞", layout="centered")
 
+# Custom CSS for the Ad spaces and Price cards
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 12px; height: 3em; font-weight: bold; }
-    .ad-box { padding: 20px; border-radius: 15px; border: 1px solid #e0e0e0; background-color: #f9f9f9; margin-bottom: 20px; }
-    .price-card { padding: 20px; border-radius: 15px; text-align: center; background: white; border: 2px solid #6366f1; }
+    .stButton>button { width: 100%; border-radius: 12px; height: 3.5em; font-weight: bold; transition: 0.3s; }
+    .stButton>button:hover { border-color: #6366f1; color: #6366f1; }
+    .ad-card { 
+        padding: 20px; border-radius: 15px; border: 1px solid #e0e0e0; 
+        background-color: #ffffff; margin-bottom: 20px; 
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    }
+    .price-container {
+        display: flex; gap: 10px; margin: 20px 0;
+    }
+    .price-box {
+        flex: 1; padding: 20px; border-radius: 20px; text-align: center;
+        background: #f8fafc; border: 2px solid #e2e8f0;
+    }
+    .highlight-price { border-color: #6366f1; background: #f5f3ff; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- INITIALIZE API CLIENT ---
-# Ensure your GOOGLE_API_KEY is in st.secrets or set as an environment variable
+# --- 2. API SETUP ---
+# It will look for GOOGLE_API_KEY in your Streamlit Secrets
 api_key = st.secrets.get("GOOGLE_API_KEY", "")
 client = genai.Client(api_key=api_key)
 
-# --- SESSION STATE MANAGEMENT ---
+# --- 3. STATE MANAGEMENT ---
 if "step" not in st.session_state:
     st.session_state.step = "search"
 if "selected_item" not in st.session_state:
@@ -26,173 +46,155 @@ if "user_specs" not in st.session_state:
 if "condition" not in st.session_state:
     st.session_state.condition = None
 
-def reset_app():
-    for key in ["step", "selected_item", "item_specs", "user_specs", "condition"]:
-        st.session_state[key] = None if key != "step" else "search"
+def reset():
+    for key in ["step", "selected_item", "item_specs", "user_specs", "condition", "result"]:
+        if key in st.session_state: del st.session_state[key]
+    st.session_state.step = "search"
     st.rerun()
 
-# --- HELPER FUNCTIONS ---
-def call_ai(prompt, image=None, is_json=True):
+# --- 4. AI LOGIC ---
+def get_ai_json(prompt, image_data=None):
     model_id = "gemini-2.5-flash-preview-09-2025"
-    config = {"response_mime_type": "application/json"} if is_json else None
-    
-    contents = [prompt]
-    if image:
-        contents.append(image)
-        
     try:
+        contents = [prompt]
+        if image_data:
+            contents.append({"inline_data": {"mime_type": "image/jpeg", "data": image_data}})
+            
         response = client.models.generate_content(
             model=model_id,
             contents=contents,
-            config=config
+            config={"response_mime_type": "application/json"}
         )
-        return json.loads(response.text) if is_json else response.text
+        return json.loads(response.text)
     except Exception as e:
-        st.error(f"AI Error: {e}")
+        st.error(f"Genie Error: {e}")
         return None
 
-# --- SIDEBAR / AD SPACE 1 ---
+# --- 5. SIDEBAR (AD SPACE 1) ---
 with st.sidebar:
     st.title("🧞 Genie Pro")
     st.markdown("---")
-    st.markdown("### 📢 Sponsored")
-    st.info("**PakMail Solutions**\n\nNeed boxes for your sale? Get 20% off all shipping supplies today!")
-    if st.button("Claim Coupon"):
-        st.success("Code: GENIE20 applied!")
+    st.markdown("### 📢 Featured Partner")
+    st.markdown("""
+    <div class="ad-card">
+        <p style="color: #6366f1; font-weight: bold; margin-bottom: 5px;">📦 PakMail Supplies</p>
+        <small>Get professional-grade bubble wrap and boxes delivered to your door.</small>
+        <br><br>
+        <a href="#" style="text-decoration: none; color: white; background: #6366f1; padding: 5px 10px; border-radius: 5px; font-size: 12px;">Get 20% Off</a>
+    </div>
+    """, unsafe_allow_html=True)
     st.markdown("---")
-    if st.button("Start New Appraisal"):
-        reset_app()
+    if st.button("🔄 Start New Appraisal"):
+        reset()
 
-# --- MAIN APP LOGIC ---
+# --- 6. MAIN APP FLOW ---
 
 # STEP 1: SMART SEARCH
 if st.session_state.step == "search":
-    st.title("What are you selling today?")
-    search_query = st.text_input("Enter item name (e.g. LG TV, Chanel Perfume, Rug)", placeholder="Start typing...")
+    st.title("What are you selling?")
+    st.write("Type anything from a 'TV' to a 'Half-used Perfume'.")
     
-    if search_query:
-        with st.spinner("Finding models..."):
-            suggestions = call_ai(
-                f"User is selling: '{search_query}'. Return a JSON array of 5 specific model suggestions."
-            )
+    query = st.text_input("Item Name", placeholder="Start typing...", label_visibility="collapsed")
+    
+    if query:
+        with st.spinner("Genie is thinking..."):
+            suggestions = get_ai_json(f"User is selling '{query}'. Suggest 5 specific models/item names in a JSON string array.")
             if suggestions:
-                st.subheader("Select the closest match:")
+                st.subheader("Select your item:")
                 for item in suggestions:
-                    if st.button(item):
+                    if st.button(item, key=item):
                         st.session_state.selected_item = item
                         st.session_state.step = "specs"
                         st.rerun()
 
 # STEP 2: DYNAMIC SPECS
 elif st.session_state.step == "specs":
-    st.title(f"Details for {st.session_state.selected_item}")
+    st.title(f"Details for your {st.session_state.selected_item}")
     
     if not st.session_state.item_specs:
-        with st.spinner("Analyzing item specs..."):
-            specs = call_ai(
-                f"For the item '{st.session_state.selected_item}', return a JSON object of 3 key variations (e.g. Size, Color, Capacity) with options for each."
-            )
-            st.session_state.item_specs = specs
+        with st.spinner("Analyzing variations..."):
+            specs = get_ai_json(f"For '{st.session_state.selected_item}', return 3 technical specs (e.g. Size, Scent, Material) with 3 options each in a JSON object.")
+            st.session_state.item_specs = specs or {}
             st.rerun()
 
-    for spec_name, options in st.session_state.item_specs.items():
-        st.session_state.user_specs[spec_name] = st.selectbox(f"Select {spec_name}", options)
+    for name, opts in st.session_state.item_specs.items():
+        st.session_state.user_specs[name] = st.selectbox(f"What {name} is it?", opts)
     
-    if st.button("Continue to Condition"):
+    if st.button("Next: Condition →"):
         st.session_state.step = "condition"
         st.rerun()
 
 # STEP 3: CONDITION
 elif st.session_state.step == "condition":
-    st.title("Condition")
-    cond = st.radio(
-        "How would you describe the item?",
-        ["New Unopened", "Opened / Like New", "Used / Well Loved"],
-        index=None
-    )
-    if cond:
-        st.session_state.condition = cond
-        if st.button("Snap a Photo"):
+    st.title("Item Condition")
+    c = st.radio("How would you rate it?", ["New Unopened", "Opened / Like New", "Used / Well Loved"], index=None)
+    if c:
+        st.session_state.condition = c
+        if st.button("Continue to Photo →"):
             st.session_state.step = "photo"
             st.rerun()
 
-# STEP 4: PHOTO CAPTURE & AI ANALYSIS
+# STEP 4: PHOTO & FINAL ANALYSIS
 elif st.session_state.step == "photo":
     st.title("Verify with Photo")
-    st.write("Take one photo of the best angle. Our AI will verify the item and condition.")
-    
-    img_file = st.camera_input("Capture Item")
+    img_file = st.camera_input("Take a photo of the item")
     
     if img_file:
-        if st.button("Generate Final Listing ✨"):
-            with st.spinner("Genie is working..."):
-                img_bytes = img_file.getvalue()
-                # Create a Part object for Gemini
-                image_part = {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(img_bytes).decode("utf-8")}}
-                
-                spec_str = json.dumps(st.session_state.user_specs)
+        if st.button("Generate Appraisal & Description ✨"):
+            with st.spinner("Finalizing marketplace data..."):
+                b64_img = base64.b64encode(img_file.getvalue()).decode()
                 prompt = f"""
-                Appraise this item. 
-                Claimed Item: {st.session_state.selected_item}
-                Specs: {spec_str}
+                Appraise: {st.session_state.selected_item}
+                Specs: {json.dumps(st.session_state.user_specs)}
                 Condition: {st.session_state.condition}
-                
-                Verify if image matches. Return JSON:
+                Verify photo matches item. Return JSON:
                 {{
-                    "verified": bool,
-                    "note": "string",
-                    "title": "Viral marketplace title",
-                    "description": "High conversion description with bullets",
-                    "quick_price": "$XX",
-                    "max_price": "$XX"
+                    "verified": bool, "note": "str", "title": "str", 
+                    "description": "str", "quick": "$XX", "max": "$XX"
                 }}
                 """
-                
-                result = call_ai(prompt, image=image_part)
-                if result:
-                    st.session_state.result = result
+                res = get_ai_json(prompt, image_data=b64_img)
+                if res:
+                    st.session_state.result = res
                     st.session_state.step = "result"
                     st.rerun()
 
 # STEP 5: RESULTS & ADS
 elif st.session_state.step == "result":
     res = st.session_state.result
+    st.title("Your Appraisal")
     
     if res.get("verified"):
-        st.success(f"✅ AI Verified: {res['note']}")
+        st.success(f"Verified: {res['note']}")
     else:
-        st.warning(f"⚠️ AI Note: {res['note']}")
+        st.warning(f"Note: {res['note']}")
 
+    st.markdown(f"""
+    <div class="price-container">
+        <div class="price-box">
+            <small>QUICK SELL</small><br>
+            <b style="font-size: 24px; color: #6366f1;">{res['quick']}</b>
+        </div>
+        <div class="price-box highlight-price">
+            <small>MARKET VALUE</small><br>
+            <b style="font-size: 24px; color: #1e293b;">{res['max']}</b>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.subheader("Copy & Paste Listing")
+    st.text_input("Recommended Title", res['title'])
+    st.text_area("Full Description", res['description'], height=200)
+
+    # AD SPACE: RESULTS PAGE
+    st.markdown("---")
+    st.markdown("### 🚀 Grow Your Sale")
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown(f"<div class='price-card'><small>QUICK SELL</small><h1>{res['quick_price']}</h1></div>", unsafe_allow_html=True)
+        st.markdown("""<div class="ad-card"><b>Ship Instantly</b><br><small>Get pre-paid UPS labels for 15% less.</small></div>""", unsafe_allow_html=True)
     with col2:
-        st.markdown(f"<div class='price-card' style='border-color: #10b981'><small>MAX VALUE</small><h1>{res['max_price']}</h1></div>", unsafe_allow_html=True)
-
-    st.markdown("### Listing Content")
-    st.text_input("Title", res['title'])
-    st.text_area("Description", res['description'], height=250)
+        st.markdown("""<div class="ad-card"><b>Professional Cleaning</b><br><small>Polish this item for $5 extra profit.</small></div>""", unsafe_allow_html=True)
     
-    st.button("📋 Copy to Clipboard (Title + Desc)") # Logic for copy can be added via JS if needed
-
-    # AD SPACE: POST-APPRAISAL
-    st.markdown("---")
-    st.markdown("### 🚀 Reach More Buyers")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("""
-            <div class='ad-box'>
-                <b>UPS Shipping Partner</b><br>
-                <small>Print labels from home and save 15%</small><br><br>
-                <a href='#'>Get Labels</a>
-            </div>
-        """, unsafe_allow_html=True)
-    with c2:
-        st.markdown("""
-            <div class='ad-box'>
-                <b>Promote Listing</b><br>
-                <small>Boost to 5,000 extra people in your area</small><br><br>
-                <a href='#'>Boost Now ($2.99)</a>
-            </div>
-        """, unsafe_allow_html=True)
+    if st.button("List Another Item"):
+        reset()
 
