@@ -1,7 +1,7 @@
 import streamlit as st
-from google import genai
 import json
 import base64
+import requests
 from PIL import Image
 import io
 
@@ -10,8 +10,7 @@ st.set_page_config(page_title="Marketplace Genie Pro", page_icon="🧞", layout=
 
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 12px; height: 3.5em; font-weight: bold; transition: 0.3s; }
-    .stButton>button:hover { border-color: #6366f1; color: #6366f1; }
+    .stButton>button { width: 100%; border-radius: 12px; height: 3.5em; font-weight: bold; }
     .ad-card { padding: 20px; border-radius: 15px; border: 1px solid #e0e0e0; background-color: #ffffff; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
     .price-container { display: flex; gap: 10px; margin: 20px 0; }
     .price-box { flex: 1; padding: 20px; border-radius: 20px; text-align: center; background: #f8fafc; border: 2px solid #e2e8f0; }
@@ -19,23 +18,59 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. API SETUP ---
-api_key = st.secrets.get("GOOGLE_API_KEY", "")
-client = genai.Client(api_key=api_key)
+# --- 2. API SETUP (DIRECT WEB CALL) ---
+API_KEY = st.secrets.get("GOOGLE_API_KEY", "")
+
+def call_genie_direct(prompt, image_b64=None):
+    # Using the absolute most stable production endpoint
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+    
+    headers = {'Content-Type': 'application/json'}
+    
+    # Building the payload manually to avoid SDK bugs
+    parts = [{"text": prompt}]
+    if image_b64:
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/jpeg",
+                "data": image_b64
+            }
+        })
+        
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "response_mime_type": "application/json"
+        }
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        result = response.json()
+        
+        # Extract the text content from the deep JSON response
+        text_content = result['candidates'][0]['content']['parts'][0]['text']
+        return json.loads(text_content)
+    except Exception as e:
+        # If v1beta fails, try the stable v1 endpoint as a last resort
+        try:
+            stable_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+            response = requests.post(stable_url, headers=headers, json=payload)
+            response.raise_for_status()
+            text_content = response.json()['candidates'][0]['content']['parts'][0]['text']
+            return json.loads(text_content)
+        except:
+            st.error(f"Genie Connection Error: {e}")
+            return None
 
 # --- 3. STATE MANAGEMENT ---
-if "step" not in st.session_state:
-    st.session_state.step = "search"
-if "selected_item" not in st.session_state:
-    st.session_state.selected_item = None
-if "item_specs" not in st.session_state:
-    st.session_state.item_specs = {}
-if "user_specs" not in st.session_state:
-    st.session_state.user_specs = {}
-if "condition" not in st.session_state:
-    st.session_state.condition = None
-if "suggestions" not in st.session_state:
-    st.session_state.suggestions = []
+if "step" not in st.session_state: st.session_state.step = "search"
+if "selected_item" not in st.session_state: st.session_state.selected_item = None
+if "item_specs" not in st.session_state: st.session_state.item_specs = {}
+if "user_specs" not in st.session_state: st.session_state.user_specs = {}
+if "condition" not in st.session_state: st.session_state.condition = None
+if "suggestions" not in st.session_state: st.session_state.suggestions = []
 
 def reset():
     for key in ["step", "selected_item", "item_specs", "user_specs", "condition", "result", "suggestions"]:
@@ -43,73 +78,29 @@ def reset():
     st.session_state.step = "search"
     st.rerun()
 
-# --- 4. ROBUST AI LOGIC (WITH FALLBACKS) ---
-def call_gemini_safe(prompt, image_data=None):
-    # We will try these models in order until one works.
-    models_to_try = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"]
-    
-    last_error = ""
-    for model_id in models_to_try:
-        try:
-            contents = [prompt]
-            if image_data:
-                contents.append({"inline_data": {"mime_type": "image/jpeg", "data": image_data}})
-                
-            response = client.models.generate_content(
-                model=model_id,
-                contents=contents,
-                config={"response_mime_type": "application/json"}
-            )
-            return json.loads(response.text)
-        except Exception as e:
-            last_error = str(e)
-            continue # Try next model if 404 or other error occurs
-            
-    st.error(f"Genie is currently unavailable. Error: {last_error}")
-    return None
-
-@st.cache_data(show_spinner=False)
-def get_cached_suggestions(query):
-    prompt = f"User is selling '{query}'. Suggest 5 specific models/item names in a JSON string array. Examples: ['LG C3 OLED TV', 'Samsung QLED 4K']"
-    return call_gemini_safe(prompt)
-
-# --- 5. SIDEBAR ---
+# --- 4. SIDEBAR ---
 with st.sidebar:
     st.title("🧞 Genie Pro")
     st.markdown("---")
     st.markdown("### 📢 Featured Partner")
-    st.markdown("""
-    <div class="ad-card">
-        <p style="color: #6366f1; font-weight: bold; margin-bottom: 5px;">📦 PakMail Supplies</p>
-        <small>Get professional-grade bubble wrap and boxes delivered to your door.</small>
-        <br><br>
-        <a href="#" style="text-decoration: none; color: white; background: #6366f1; padding: 5px 10px; border-radius: 5px; font-size: 12px;">Get 20% Off</a>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("---")
+    st.markdown('<div class="ad-card"><b>📦 PakMail Supplies</b><br><small>Boxes and bubble wrap delivered.</small><br><br><a href="#">Get 20% Off</a></div>', unsafe_allow_html=True)
     if st.button("🔄 Start New Appraisal"):
         reset()
 
-# --- 6. MAIN APP FLOW ---
+# --- 5. MAIN APP FLOW ---
 
 # STEP 1: SEARCH
 if st.session_state.step == "search":
     st.title("What are you selling?")
-    st.write("Type anything from a 'TV' to a 'Half-used Perfume'.")
+    query = st.text_input("Item Name", placeholder="Ex: iPhone 15", label_visibility="collapsed")
     
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        query = st.text_input("Item Name", placeholder="Ex: iPhone 15", label_visibility="collapsed")
-    with col2:
-        search_pressed = st.button("Find Item 🔍")
-    
-    if (search_pressed or query.strip() != "") and query:
-        if search_pressed:
-            with st.spinner("Genie is thinking..."):
-                st.session_state.suggestions = get_cached_suggestions(query)
+    if st.button("Find Item 🔍") and query:
+        with st.spinner("Genie is searching..."):
+            prompt = f"User is selling '{query}'. Suggest 5 specific models in a JSON string array."
+            st.session_state.suggestions = call_genie_direct(prompt)
             
     if st.session_state.suggestions:
-        st.subheader("Select your exact item:")
+        st.subheader("Select your item:")
         for item in st.session_state.suggestions:
             if st.button(item, key=item):
                 st.session_state.selected_item = item
@@ -118,91 +109,52 @@ if st.session_state.step == "search":
 
 # STEP 2: SPECS
 elif st.session_state.step == "specs":
-    st.title(f"Details for your {st.session_state.selected_item}")
-    
+    st.title(f"Details for {st.session_state.selected_item}")
     if not st.session_state.item_specs:
-        with st.spinner("Analyzing variations..."):
-            prompt = f"For '{st.session_state.selected_item}', return 3 technical specs (e.g. Size, Scent, Material) with 3 options each in a JSON object."
-            st.session_state.item_specs = call_gemini_safe(prompt) or {}
+        with st.spinner("Generating options..."):
+            prompt = f"For '{st.session_state.selected_item}', return 3 variations (Size, Color, etc) in a JSON object with options."
+            st.session_state.item_specs = call_genie_direct(prompt) or {}
             st.rerun()
 
     for name, opts in st.session_state.item_specs.items():
-        st.session_state.user_specs[name] = st.selectbox(f"What {name} is it?", opts)
+        st.session_state.user_specs[name] = st.selectbox(f"Select {name}", opts)
     
-    if st.button("Next: Condition →"):
+    if st.button("Continue →"):
         st.session_state.step = "condition"
         st.rerun()
 
 # STEP 3: CONDITION
 elif st.session_state.step == "condition":
-    st.title("Item Condition")
-    c = st.radio("How would you rate it?", ["New Unopened", "Opened / Like New", "Used / Well Loved"], index=None)
+    st.title("Condition")
+    c = st.radio("Rate it:", ["New Unopened", "Opened / Like New", "Used / Well Loved"], index=None)
     if c:
         st.session_state.condition = c
-        if st.button("Continue to Photo →"):
+        if st.button("Take Photo →"):
             st.session_state.step = "photo"
             st.rerun()
 
-# STEP 4: PHOTO & FINAL ANALYSIS
+# STEP 4: PHOTO & FINAL
 elif st.session_state.step == "photo":
-    st.title("Verify with Photo")
-    img_file = st.camera_input("Take a photo of the item")
-    
+    st.title("Capture Item")
+    img_file = st.camera_input("Photo")
     if img_file:
-        if st.button("Generate Appraisal & Description ✨"):
-            with st.spinner("Finalizing marketplace data..."):
-                b64_img = base64.b64encode(img_file.getvalue()).decode()
-                prompt = f"""
-                Appraise: {st.session_state.selected_item}
-                Specs: {json.dumps(st.session_state.user_specs)}
-                Condition: {st.session_state.condition}
-                Verify photo matches item. Return JSON:
-                {{
-                    "verified": bool, "note": "str", "title": "str", 
-                    "description": "str", "quick": "$XX", "max": "$XX"
-                }}
-                """
-                res = call_gemini_safe(prompt, image_data=b64_img)
+        if st.button("Generate Listing ✨"):
+            with st.spinner("Analyzing..."):
+                b64 = base64.b64encode(img_file.getvalue()).decode()
+                prompt = f"Appraise: {st.session_state.selected_item}. Specs: {json.dumps(st.session_state.user_specs)}. Condition: {st.session_state.condition}. Return JSON with verified:bool, note, title, description, quick, max prices."
+                res = call_genie_direct(prompt, image_b64=b64)
                 if res:
                     st.session_state.result = res
                     st.session_state.step = "result"
                     st.rerun()
 
-# STEP 5: RESULTS & ADS
+# STEP 5: RESULT
 elif st.session_state.step == "result":
     res = st.session_state.result
     st.title("Your Appraisal")
-    
-    if res.get("verified"):
-        st.success(f"Verified: {res['note']}")
-    else:
-        st.warning(f"Note: {res['note']}")
-
-    st.markdown(f"""
-    <div class="price-container">
-        <div class="price-box">
-            <small>QUICK SELL</small><br>
-            <b style="font-size: 24px; color: #6366f1;">{res['quick']}</b>
-        </div>
-        <div class="price-box highlight-price">
-            <small>MARKET VALUE</small><br>
-            <b style="font-size: 24px; color: #1e293b;">{res['max']}</b>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.subheader("Copy & Paste Listing")
-    st.text_input("Recommended Title", res['title'])
-    st.text_area("Full Description", res['description'], height=200)
-
-    st.markdown("---")
-    st.markdown("### 🚀 Grow Your Sale")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("""<div class="ad-card"><b>Ship Instantly</b><br><small>Get UPS labels for 15% less.</small></div>""", unsafe_allow_html=True)
-    with col2:
-        st.markdown("""<div class="ad-card"><b>Listing Boost</b><br><small>Reach 5k extra buyers for $2.99.</small></div>""", unsafe_allow_html=True)
-    
-    if st.button("List Another Item"):
-        reset()
+    st.success(f"Verified: {res.get('note', 'Match found')}")
+    st.markdown(f'<div class="price-container"><div class="price-box">QUICK: {res["quick"]}</div><div class="price-box highlight-price">MAX: {res["max"]}</div></div>', unsafe_allow_html=True)
+    st.text_input("Title", res['title'])
+    st.text_area("Description", res['description'], height=200)
+    if st.button("Done"): reset()
 
