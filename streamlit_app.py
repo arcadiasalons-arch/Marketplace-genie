@@ -54,7 +54,8 @@ def reset():
 
 # --- 4. AI LOGIC ---
 def get_ai_json(prompt, image_data=None):
-    model_id = "gemini-2.5-flash-preview-09-2025"
+    # CHANGED: Updated to the stable public model identifier
+    model_id = "gemini-2.0-flash" 
     try:
         contents = [prompt]
         if image_data:
