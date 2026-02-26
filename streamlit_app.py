@@ -43,39 +43,35 @@ def reset():
     st.session_state.step = "search"
     st.rerun()
 
-# --- 4. AI LOGIC (WITH CACHING TO SAVE QUOTA) ---
+# --- 4. ROBUST AI LOGIC (WITH FALLBACKS) ---
+def call_gemini_safe(prompt, image_data=None):
+    # We will try these models in order until one works.
+    models_to_try = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"]
+    
+    last_error = ""
+    for model_id in models_to_try:
+        try:
+            contents = [prompt]
+            if image_data:
+                contents.append({"inline_data": {"mime_type": "image/jpeg", "data": image_data}})
+                
+            response = client.models.generate_content(
+                model=model_id,
+                contents=contents,
+                config={"response_mime_type": "application/json"}
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            last_error = str(e)
+            continue # Try next model if 404 or other error occurs
+            
+    st.error(f"Genie is currently unavailable. Error: {last_error}")
+    return None
+
 @st.cache_data(show_spinner=False)
 def get_cached_suggestions(query):
-    # We use 1.5-flash here because the free tier is much more forgiving
-    model_id = "gemini-1.5-flash"
-    try:
-        response = client.models.generate_content(
-            model=model_id,
-            contents=[f"User is selling '{query}'. Suggest 5 specific models/item names in a JSON string array. Examples: ['LG C3 OLED TV', 'Samsung QLED 4K']"],
-            config={"response_mime_type": "application/json"}
-        )
-        return json.loads(response.text)
-    except Exception as e:
-        st.error(f"Genie Error: {e}")
-        return []
-
-def get_ai_json(prompt, image_data=None):
-    # Using 1.5-flash for broader free-tier compatibility
-    model_id = "gemini-1.5-flash" 
-    try:
-        contents = [prompt]
-        if image_data:
-            contents.append({"inline_data": {"mime_type": "image/jpeg", "data": image_data}})
-            
-        response = client.models.generate_content(
-            model=model_id,
-            contents=contents,
-            config={"response_mime_type": "application/json"}
-        )
-        return json.loads(response.text)
-    except Exception as e:
-        st.error(f"Genie Error: {e}")
-        return None
+    prompt = f"User is selling '{query}'. Suggest 5 specific models/item names in a JSON string array. Examples: ['LG C3 OLED TV', 'Samsung QLED 4K']"
+    return call_gemini_safe(prompt)
 
 # --- 5. SIDEBAR ---
 with st.sidebar:
@@ -96,21 +92,21 @@ with st.sidebar:
 
 # --- 6. MAIN APP FLOW ---
 
-# STEP 1: SMART SEARCH
+# STEP 1: SEARCH
 if st.session_state.step == "search":
     st.title("What are you selling?")
     st.write("Type anything from a 'TV' to a 'Half-used Perfume'.")
     
     col1, col2 = st.columns([3, 1])
     with col1:
-        query = st.text_input("Item Name", placeholder="Start typing...", label_visibility="collapsed")
+        query = st.text_input("Item Name", placeholder="Ex: iPhone 15", label_visibility="collapsed")
     with col2:
-        # Added a strict button to prevent accidental API calls
         search_pressed = st.button("Find Item 🔍")
     
-    if search_pressed and query:
-        with st.spinner("Genie is thinking..."):
-            st.session_state.suggestions = get_cached_suggestions(query)
+    if (search_pressed or query.strip() != "") and query:
+        if search_pressed:
+            with st.spinner("Genie is thinking..."):
+                st.session_state.suggestions = get_cached_suggestions(query)
             
     if st.session_state.suggestions:
         st.subheader("Select your exact item:")
@@ -120,14 +116,14 @@ if st.session_state.step == "search":
                 st.session_state.step = "specs"
                 st.rerun()
 
-# STEP 2: DYNAMIC SPECS
+# STEP 2: SPECS
 elif st.session_state.step == "specs":
     st.title(f"Details for your {st.session_state.selected_item}")
     
     if not st.session_state.item_specs:
         with st.spinner("Analyzing variations..."):
-            specs = get_ai_json(f"For '{st.session_state.selected_item}', return 3 technical specs (e.g. Size, Scent, Material) with 3 options each in a JSON object.")
-            st.session_state.item_specs = specs or {}
+            prompt = f"For '{st.session_state.selected_item}', return 3 technical specs (e.g. Size, Scent, Material) with 3 options each in a JSON object."
+            st.session_state.item_specs = call_gemini_safe(prompt) or {}
             st.rerun()
 
     for name, opts in st.session_state.item_specs.items():
@@ -166,7 +162,7 @@ elif st.session_state.step == "photo":
                     "description": "str", "quick": "$XX", "max": "$XX"
                 }}
                 """
-                res = get_ai_json(prompt, image_data=b64_img)
+                res = call_gemini_safe(prompt, image_data=b64_img)
                 if res:
                     st.session_state.result = res
                     st.session_state.step = "result"
@@ -199,16 +195,14 @@ elif st.session_state.step == "result":
     st.text_input("Recommended Title", res['title'])
     st.text_area("Full Description", res['description'], height=200)
 
-    # AD SPACE: RESULTS PAGE
     st.markdown("---")
     st.markdown("### 🚀 Grow Your Sale")
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("""<div class="ad-card"><b>Ship Instantly</b><br><small>Get pre-paid UPS labels for 15% less.</small></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="ad-card"><b>Ship Instantly</b><br><small>Get UPS labels for 15% less.</small></div>""", unsafe_allow_html=True)
     with col2:
-        st.markdown("""<div class="ad-card"><b>Professional Cleaning</b><br><small>Polish this item for $5 extra profit.</small></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="ad-card"><b>Listing Boost</b><br><small>Reach 5k extra buyers for $2.99.</small></div>""", unsafe_allow_html=True)
     
     if st.button("List Another Item"):
         reset()
-
 
