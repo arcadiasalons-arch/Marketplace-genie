@@ -3,84 +3,77 @@ from google import genai
 from google.genai import types
 from openai import OpenAI
 import pandas as pd
-import plotly.graph_objects as go
 from PIL import Image
-import segno
-from io import BytesIO
-import re
 import datetime
 
-# --- CONFIG ---
-st.set_page_config(page_title="Genie Kiosk", layout="centered", page_icon="🧞")
+# --- BRANDING & HISTORY ---
+st.set_page_config(page_title="Genius App: Multi-Brain", layout="wide")
+st.title("🧞 The Multi-Brain Genius (Stable Build)")
 
 if "history" not in st.session_state:
-    st.session_state.history = pd.DataFrame(columns=["Date", "Item", "Status", "Hype"])
+    st.session_state.history = pd.DataFrame(columns=["Date", "Item", "Value", "Hype"])
 
-# Setup Clients
+# --- API CLIENTS ---
+# Using the standard v1 production endpoints for stability
 client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-grok_client = OpenAI(api_key=st.secrets["XAI_API_KEY"], base_url="https://api.x.ai/v1")
+grok = OpenAI(api_key=st.secrets["XAI_API_KEY"], base_url="https://api.x.ai/v1")
 
-st.title("🧞 Marketplace Genie: Redemption Build")
+# --- USER INPUT ---
+item = st.text_input("What are we appraising today?")
+imgs = st.file_uploader("Upload Item Photo", type=['jpg', 'png', 'jpeg'])
 
-# --- INPUTS ---
-item_name = st.text_input("Item to Appraise", placeholder="e.g. iPhone 17 Pro")
-data_scan = st.file_uploader("📷 Step 1: Upload Settings > About Screen", type=['jpg','png','jpeg'])
-mirror_scan = st.file_uploader("📷 Step 2: Upload a Mirror Photo (Front & Back)", type=['jpg','png','jpeg'])
-
-# --- CORE LOGIC ---
-if st.button("🚀 EXECUTE FULL ANALYSIS") and item_name and data_scan and mirror_scan:
-    with st.spinner("Genie is syncing brains..."):
+if st.button("🚀 Run Multi-Brain Analysis") and item and imgs:
+    with st.spinner("Genius & Grok are calculating..."):
         try:
-            # 1. VISUAL OCR (Hardware Identification)
-            img_data = Image.open(data_scan)
-            data_res = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=["Extract the IMEI and Serial Number from this screen.", img_data]
+            # BRAIN 1: GEMINI (Market Data)
+            # Using 1.5-flash for maximum free-tier reliability
+            gem_res = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=[f"Provide a 2026 market price for {item}.", Image.open(imgs)],
+                config=types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                )
             )
-            imei = re.search(r'\d{15}', data_res.text).group(0) if re.search(r'\d{15}', data_res.text) else "Unknown"
-
-            # 2. MARKET VALUATION (Google Search Grounding)
-            search_tool = types.Tool(google_search=types.GoogleSearch())
-            img_mirror = Image.open(mirror_scan)
-            gemini_res = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=[f"Appraise this {item_name} for Jan 2026. Check mirror for cracks.", img_mirror],
-                config=types.GenerateContentConfig(tools=[search_tool])
+            
+            # BRAIN 2: GROK (Social Hype)
+            grok_res = grok.chat.completions.create(
+                model="grok-3",
+                messages=[{"role": "user", "content": f"Check X/Twitter: Is {item} a good buy in 2026?"}]
             )
-
-            # 3. GROK HYPE (Social Sentiment)
-            grok_res = grok_client.chat.completions.create(
-                model="grok-3", # Stable model from that specific session
-                messages=[{"role": "user", "content": f"Check X hype for {item_name}. Give a score 1-10."}]
-            )
-            score_match = re.search(r'\b([1-9]|10)\b', grok_res.choices[0].message.content)
-            hype_val = int(score_match.group(1)) if score_match else 5
+            sentiment = grok_res.choices[0].message.content
 
             # --- DISPLAY RESULTS ---
-            st.success(f"✅ Device Identified: IMEI {imei}")
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.subheader("🔥 Hype Meter")
-                fig = go.Figure(go.Indicator(mode="gauge+number", value=hype_val, gauge={'axis': {'range': [1, 10]}, 'bar': {'color': "gold"}}))
-                st.plotly_chart(fig, use_container_width=True)
-            with c2:
-                st.subheader("💰 Instant Payout")
-                st.metric("Cash Offer", "$435.00")
-                st.write(gemini_res.text[:300] + "...")
+            st.success("Appraisal Complete!")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("📊 Market View (Gemini)")
+                st.write(gem_res.text)
+            with col2:
+                st.subheader("🐦 Hype View (Grok)")
+                st.write(sentiment)
 
-            # Save state for voucher
-            st.session_state.current_imei = imei
+            # Update History Table
+            new_row = pd.DataFrame([{
+                "Date": datetime.date.today(),
+                "Item": item,
+                "Value": "Analyzed",
+                "Hype": "Verified"
+            }])
+            st.session_state.history = pd.concat([st.session_state.history, new_row], ignore_index=True)
 
         except Exception as e:
-            st.error(f"Genie Hiccup: {e}")
+            st.error(f"Brain Sync Error: {e}")
 
-# --- VOUCHER SECTION ---
-if "current_imei" in st.session_state:
-    st.divider()
-    if st.button("🧧 CLAIM CASH VOUCHER"):
-        qr = segno.make(f"GENIE-PAY-{st.session_state.current_imei}-$435.00")
-        buf = BytesIO()
-        qr.save(buf, kind='png', scale=10)
-        st.image(buf.getvalue(), caption="Scan at any Kiosk", width=250)
-        st.balloons()
+# --- PANDA ANALYTICS (Simulated) ---
+if not st.session_state.history.empty:
+    st.write("---")
+    st.subheader("🐼 Panda History Intelligence")
+    st.dataframe(st.session_state.history)
+    if st.button("Summarize My Trends"):
+        # We use Gemini to act as Panda and summarize the history
+        history_text = st.session_state.history.to_string()
+        panda_res = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=f"Analyze this history and summarize the trends: {history_text}"
+        )
+        st.info(panda_res.text)
