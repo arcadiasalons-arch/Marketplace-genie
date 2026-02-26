@@ -8,29 +8,18 @@ import io
 # --- 1. SETTINGS & STYLING ---
 st.set_page_config(page_title="Marketplace Genie Pro", page_icon="🧞", layout="centered")
 
-# Custom CSS for the Ad spaces and Price cards
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 12px; height: 3.5em; font-weight: bold; transition: 0.3s; }
     .stButton>button:hover { border-color: #6366f1; color: #6366f1; }
-    .ad-card { 
-        padding: 20px; border-radius: 15px; border: 1px solid #e0e0e0; 
-        background-color: #ffffff; margin-bottom: 20px; 
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-    }
-    .price-container {
-        display: flex; gap: 10px; margin: 20px 0;
-    }
-    .price-box {
-        flex: 1; padding: 20px; border-radius: 20px; text-align: center;
-        background: #f8fafc; border: 2px solid #e2e8f0;
-    }
+    .ad-card { padding: 20px; border-radius: 15px; border: 1px solid #e0e0e0; background-color: #ffffff; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+    .price-container { display: flex; gap: 10px; margin: 20px 0; }
+    .price-box { flex: 1; padding: 20px; border-radius: 20px; text-align: center; background: #f8fafc; border: 2px solid #e2e8f0; }
     .highlight-price { border-color: #6366f1; background: #f5f3ff; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- 2. API SETUP ---
-# It will look for GOOGLE_API_KEY in your Streamlit Secrets
 api_key = st.secrets.get("GOOGLE_API_KEY", "")
 client = genai.Client(api_key=api_key)
 
@@ -45,17 +34,34 @@ if "user_specs" not in st.session_state:
     st.session_state.user_specs = {}
 if "condition" not in st.session_state:
     st.session_state.condition = None
+if "suggestions" not in st.session_state:
+    st.session_state.suggestions = []
 
 def reset():
-    for key in ["step", "selected_item", "item_specs", "user_specs", "condition", "result"]:
+    for key in ["step", "selected_item", "item_specs", "user_specs", "condition", "result", "suggestions"]:
         if key in st.session_state: del st.session_state[key]
     st.session_state.step = "search"
     st.rerun()
 
-# --- 4. AI LOGIC ---
+# --- 4. AI LOGIC (WITH CACHING TO SAVE QUOTA) ---
+@st.cache_data(show_spinner=False)
+def get_cached_suggestions(query):
+    # We use 1.5-flash here because the free tier is much more forgiving
+    model_id = "gemini-1.5-flash"
+    try:
+        response = client.models.generate_content(
+            model=model_id,
+            contents=[f"User is selling '{query}'. Suggest 5 specific models/item names in a JSON string array. Examples: ['LG C3 OLED TV', 'Samsung QLED 4K']"],
+            config={"response_mime_type": "application/json"}
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        st.error(f"Genie Error: {e}")
+        return []
+
 def get_ai_json(prompt, image_data=None):
-    # CHANGED: Updated to the stable public model identifier
-    model_id = "gemini-2.0-flash" 
+    # Using 1.5-flash for broader free-tier compatibility
+    model_id = "gemini-1.5-flash" 
     try:
         contents = [prompt]
         if image_data:
@@ -71,7 +77,7 @@ def get_ai_json(prompt, image_data=None):
         st.error(f"Genie Error: {e}")
         return None
 
-# --- 5. SIDEBAR (AD SPACE 1) ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
     st.title("🧞 Genie Pro")
     st.markdown("---")
@@ -95,18 +101,24 @@ if st.session_state.step == "search":
     st.title("What are you selling?")
     st.write("Type anything from a 'TV' to a 'Half-used Perfume'.")
     
-    query = st.text_input("Item Name", placeholder="Start typing...", label_visibility="collapsed")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        query = st.text_input("Item Name", placeholder="Start typing...", label_visibility="collapsed")
+    with col2:
+        # Added a strict button to prevent accidental API calls
+        search_pressed = st.button("Find Item 🔍")
     
-    if query:
+    if search_pressed and query:
         with st.spinner("Genie is thinking..."):
-            suggestions = get_ai_json(f"User is selling '{query}'. Suggest 5 specific models/item names in a JSON string array.")
-            if suggestions:
-                st.subheader("Select your item:")
-                for item in suggestions:
-                    if st.button(item, key=item):
-                        st.session_state.selected_item = item
-                        st.session_state.step = "specs"
-                        st.rerun()
+            st.session_state.suggestions = get_cached_suggestions(query)
+            
+    if st.session_state.suggestions:
+        st.subheader("Select your exact item:")
+        for item in st.session_state.suggestions:
+            if st.button(item, key=item):
+                st.session_state.selected_item = item
+                st.session_state.step = "specs"
+                st.rerun()
 
 # STEP 2: DYNAMIC SPECS
 elif st.session_state.step == "specs":
@@ -198,4 +210,5 @@ elif st.session_state.step == "result":
     
     if st.button("List Another Item"):
         reset()
+
 
