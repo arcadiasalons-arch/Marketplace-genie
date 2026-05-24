@@ -1,6 +1,27 @@
-streamlit>=1.52.0
-google-genai>=1.0.0
-openai>=1.50.0
-pandas>=2.2.3
-plotly>=5.24.0
-pillow>=10.0.0
+# --- Frontend & UI ---
+PyQt6==6.5.2          # Required if keeping the original desktop app
+streamlit>=1.30.0     # Required for your custom Web App conversion
+
+# --- AI Models & Audio/Video Processing ---
+TTS==0.22.0           # Coqui-TTS for XTTSv2 dubbing
+librosa==0.9.2        # Audio processing (needed for Wav2Lip and RVC)
+opencv-python>=4.8.0  # Video processing and frame extraction
+numpy==1.23.5         # Math operations (stick to <1.24 for Wav2Lip compatibility)
+scipy>=1.10.1         # Scientific computing for audio
+moviepy>=1.0.3        # Video and audio merging
+ffmpeg-python>=0.2.0  # FFmpeg wrapper
+
+# --- Face Restoration (GFPGAN) ---
+gfpgan>=1.3.8
+basicsr>=1.4.2
+facexlib>=0.3.0
+
+# --- RVC (Voice Cloning) Specifics ---
+fairseq==0.12.2
+praat-parselmouth>=0.4.3
+pyworld>=0.3.4
+soundfile>=0.12.1
+
+# --- Utility ---
+tqdm>=4.66.1          # Progress bars
+requests>=2.31.0      # Model downloading
